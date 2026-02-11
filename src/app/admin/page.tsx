@@ -39,7 +39,7 @@ export default function AdminPage() {
   const [endTime, setEndTime] = useState(60);
   const [fetchingTranscript, setFetchingTranscript] = useState(false);
 
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = Boolean(user?.email && ADMIN_EMAIL && user.email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim());
 
   useEffect(() => {
     if (isAdmin) {

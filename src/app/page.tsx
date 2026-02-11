@@ -16,7 +16,7 @@ export default function Home() {
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
 
-  const isAdmin = user?.email === ADMIN_EMAIL;
+  const isAdmin = Boolean(user?.email && ADMIN_EMAIL && user.email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim());
 
   useEffect(() => {
     if (user) {

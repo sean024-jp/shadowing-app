@@ -4,18 +4,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-
-type TranscriptItem = {
-  text: string;
-  offset: number;
-  duration: number;
-};
+import { DifficultyBadge } from "@/components/DifficultyBadge";
+import type { Difficulty, TranscriptItem } from "@/types/models";
 
 type MaterialRequest = {
   id: string;
   youtube_url: string;
   youtube_id: string;
   title: string | null;
+  difficulty: Difficulty | null;
+  start_time: number;
+  end_time: number | null;
   status: string;
   created_at: string;
 };
@@ -33,8 +32,11 @@ export default function AdminPage() {
   // Approval form state
   const [editingRequest, setEditingRequest] = useState<MaterialRequest | null>(null);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
+  const [transcriptJa, setTranscriptJa] = useState<TranscriptItem[]>([]);
   const [title, setTitle] = useState("");
+  const [difficulty, setDifficulty] = useState<Difficulty>("beginner");
   const [startTime, setStartTime] = useState(0);
+  const [endTime, setEndTime] = useState(60);
   const [fetchingTranscript, setFetchingTranscript] = useState(false);
 
   const isAdmin = user?.email === ADMIN_EMAIL;
@@ -55,25 +57,32 @@ export default function AdminPage() {
     setLoading(false);
   };
 
-  const fetchTranscript = async (req: MaterialRequest) => {
+  const fetchTranscriptData = async (req: MaterialRequest) => {
     setError("");
     setFetchingTranscript(true);
     setEditingRequest(req);
     setTitle(req.title || "");
+    setDifficulty(req.difficulty || "beginner");
+    setStartTime(req.start_time || 0);
+    setEndTime(req.end_time || 60);
 
     try {
-      const res = await fetch(`/api/transcript?videoId=${req.youtube_id}`);
+      const res = await fetch(`/api/transcript?videoId=${req.youtube_id}&multiLang=true`);
       const data = await res.json();
 
       if (!res.ok || data.error) {
         throw new Error(data.error || "字幕を取得できませんでした");
       }
 
-      if (!Array.isArray(data) || data.length === 0) {
-        throw new Error("字幕データが見つかりませんでした");
+      const enTranscript = data.en || [];
+      const jaTranscript = data.ja || [];
+
+      if (enTranscript.length === 0) {
+        throw new Error("英語字幕データが見つかりませんでした");
       }
 
-      setTranscript(data);
+      setTranscript(enTranscript);
+      setTranscriptJa(jaTranscript);
     } catch (err) {
       setError(err instanceof Error ? err.message : "エラーが発生しました");
       setEditingRequest(null);
@@ -85,18 +94,16 @@ export default function AdminPage() {
   const totalDuration =
     transcript.length > 0
       ? Math.ceil(
-          (transcript[transcript.length - 1].offset +
-            transcript[transcript.length - 1].duration) /
-            1000
-        )
+        (transcript[transcript.length - 1].offset +
+          transcript[transcript.length - 1].duration) /
+        1000
+      )
       : 0;
 
-  const getEndTime = () => Math.min(startTime + 60, totalDuration);
-
-  const getSelectedTranscript = () => {
+  const getSelectedTranscript = (items: TranscriptItem[]) => {
     const start = startTime * 1000;
-    const end = getEndTime() * 1000;
-    return transcript.filter(
+    const end = endTime * 1000;
+    return items.filter(
       (item) => item.offset >= start && item.offset < end
     );
   };
@@ -107,17 +114,19 @@ export default function AdminPage() {
     setProcessingId(editingRequest.id);
     setError("");
 
-    const selectedTranscript = getSelectedTranscript();
+    const selectedEn = getSelectedTranscript(transcript);
+    const selectedJa = getSelectedTranscript(transcriptJa);
 
-    // Save as material
     const { error: saveError } = await supabase.from("materials").insert({
       user_id: user.id,
       youtube_url: editingRequest.youtube_url,
       youtube_id: editingRequest.youtube_id,
       title: title || `YouTube教材 ${new Date().toLocaleDateString("ja-JP")}`,
       start_time: startTime,
-      end_time: getEndTime(),
-      transcript: selectedTranscript,
+      end_time: endTime,
+      transcript: selectedEn,
+      transcript_ja: selectedJa.length > 0 ? selectedJa : null,
+      difficulty,
     });
 
     if (saveError) {
@@ -126,7 +135,6 @@ export default function AdminPage() {
       return;
     }
 
-    // Update request status
     await supabase
       .from("material_requests")
       .update({ status: "approved" })
@@ -135,7 +143,9 @@ export default function AdminPage() {
     setSuccess(`「${title}」を教材として追加しました`);
     setEditingRequest(null);
     setTranscript([]);
+    setTranscriptJa([]);
     setStartTime(0);
+    setEndTime(60);
     setProcessingId(null);
     loadRequests();
   };
@@ -154,7 +164,9 @@ export default function AdminPage() {
   const cancelEditing = () => {
     setEditingRequest(null);
     setTranscript([]);
+    setTranscriptJa([]);
     setStartTime(0);
+    setEndTime(60);
     setError("");
   };
 
@@ -164,7 +176,7 @@ export default function AdminPage() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  const maxStartTime = Math.max(0, totalDuration - 60);
+  const maxStartTime = Math.max(0, totalDuration - 30);
 
   if (!user) {
     return (
@@ -186,21 +198,21 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <Link href="/" className="text-blue-500 hover:underline mb-4 inline-block">
+    <div className="max-w-4xl mx-auto p-4 md:p-6 pb-20">
+      <Link href="/" className="text-blue-500 hover:underline mb-3 inline-block text-sm">
         ← 戻る
       </Link>
 
-      <h1 className="text-2xl font-bold mb-6">管理者: 教材リクエスト一覧</h1>
+      <h1 className="text-lg md:text-2xl font-bold mb-4 md:mb-6">管理者: リクエスト一覧</h1>
 
       {error && (
-        <div className="bg-red-900/30 border border-red-500/50 text-red-300 px-4 py-3 rounded-lg mb-4">
+        <div className="bg-red-900/30 border border-red-500/50 text-red-300 px-3 py-2 rounded-lg mb-3 text-sm">
           {error}
         </div>
       )}
 
       {success && (
-        <div className="bg-green-900/30 border border-green-500/50 text-green-300 px-4 py-3 rounded-lg mb-4">
+        <div className="bg-green-900/30 border border-green-500/50 text-green-300 px-3 py-2 rounded-lg mb-3 text-sm">
           {success}
         </div>
       )}
@@ -208,15 +220,15 @@ export default function AdminPage() {
       {/* Editing / Approval Form */}
       {editingRequest && (
         <div
-          className="rounded-lg p-6 mb-6"
+          className="rounded-lg p-4 md:p-6 mb-4 md:mb-6"
           style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
         >
-          <h2 className="font-bold text-lg mb-4">教材を承認</h2>
+          <h2 className="font-bold text-base md:text-lg mb-4">教材を承認</h2>
 
           {fetchingTranscript ? (
             <div className="flex items-center gap-2 py-8 justify-center">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-              <span>字幕を取得中...</span>
+              <span className="text-sm">字幕を取得中...</span>
             </div>
           ) : (
             <div className="space-y-4">
@@ -232,13 +244,13 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <label className="block mb-2 font-medium">タイトル</label>
+                <label className="block mb-1.5 font-medium text-sm">タイトル</label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="教材のタイトル"
-                  className="w-full rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   style={{
                     background: "var(--input-bg)",
                     border: "1px solid var(--input-border)",
@@ -248,60 +260,131 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <label className="block mb-2 font-medium">
-                  開始位置: {formatTime(startTime)} 〜 {formatTime(getEndTime())} （1分間）
-                </label>
-                {maxStartTime > 0 ? (
-                  <>
+                <label className="block mb-1.5 font-medium text-sm">難易度</label>
+                <div className="flex gap-2">
+                  {(["beginner", "intermediate", "advanced"] as Difficulty[]).map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setDifficulty(d)}
+                      className={`flex-1 px-3 py-2 rounded-lg transition text-sm ${difficulty === d ? "bg-blue-600 text-white" : ""
+                        }`}
+                      style={
+                        difficulty !== d
+                          ? { background: "var(--input-bg)", border: "1px solid var(--input-border)" }
+                          : undefined
+                      }
+                    >
+                      {d === "beginner" ? "初級" : d === "intermediate" ? "中級" : "上級"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700">
+                <p className="text-xs font-medium text-gray-500 mb-2">
+                  範囲: {formatTime(startTime)} 〜 {formatTime(endTime)}（{endTime - startTime}秒）
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                      <span>開始</span>
+                      <span className="font-mono">{formatTime(startTime)}</span>
+                    </div>
                     <input
                       type="range"
                       min={0}
-                      max={maxStartTime}
+                      max={Math.max(maxStartTime, totalDuration)}
                       step={1}
                       value={startTime}
-                      onChange={(e) => setStartTime(Number(e.target.value))}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setStartTime(v);
+                        if (endTime - v < 30) setEndTime(Math.min(v + 30, totalDuration));
+                        if (endTime - v > 180) setEndTime(v + 180);
+                      }}
                       className="w-full h-2 rounded-lg appearance-none cursor-pointer"
-                      style={{ background: "#4b5563" }}
+                      style={{ background: "var(--input-border)" }}
                     />
-                    <div className="flex justify-between text-sm opacity-60 mt-1">
-                      <span>0:00</span>
-                      <span>{formatTime(totalDuration)}</span>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs text-gray-500 mb-1">
+                      <span>終了</span>
+                      <span className="font-mono">{formatTime(endTime)}</span>
                     </div>
-                  </>
-                ) : (
-                  <p className="text-sm opacity-60">
-                    動画が1分以下のため、全体が選択されています
-                  </p>
-                )}
+                    <input
+                      type="range"
+                      min={30}
+                      max={totalDuration}
+                      step={1}
+                      value={endTime}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setEndTime(v);
+                        if (v - startTime < 30) setStartTime(Math.max(v - 30, 0));
+                        if (v - startTime > 180) setStartTime(v - 180);
+                      }}
+                      className="w-full h-2 rounded-lg appearance-none cursor-pointer"
+                      style={{ background: "var(--input-border)" }}
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div
-                className="rounded-lg p-4 max-h-60 overflow-y-auto"
-                style={{ background: "var(--background)" }}
-              >
-                {getSelectedTranscript().length > 0 ? (
-                  getSelectedTranscript().map((item, idx) => (
-                    <span key={idx} className="mr-1">
-                      {item.text}
-                    </span>
-                  ))
-                ) : (
-                  <p className="opacity-60">この範囲にスクリプトがありません</p>
-                )}
+              {/* English transcript preview */}
+              <div>
+                <h3 className="font-medium text-sm mb-2">英語スクリプト</h3>
+                <div
+                  className="rounded-lg p-3 max-h-32 overflow-y-auto text-sm"
+                  style={{ background: "var(--background)" }}
+                >
+                  {getSelectedTranscript(transcript).length > 0 ? (
+                    getSelectedTranscript(transcript).map((item, idx) => (
+                      <span key={idx} className="mr-1">
+                        {item.text}
+                      </span>
+                    ))
+                  ) : (
+                    <p className="opacity-60">この範囲に英語スクリプトがありません</p>
+                  )}
+                </div>
               </div>
 
-              <div className="flex gap-4">
+              {/* Japanese transcript preview */}
+              <div>
+                <h3 className="font-medium text-sm mb-2">
+                  日本語スクリプト
+                  {transcriptJa.length === 0 && (
+                    <span className="text-xs opacity-60 ml-2">（なし）</span>
+                  )}
+                </h3>
+                <div
+                  className="rounded-lg p-3 max-h-32 overflow-y-auto text-sm"
+                  style={{ background: "var(--background)" }}
+                >
+                  {getSelectedTranscript(transcriptJa).length > 0 ? (
+                    getSelectedTranscript(transcriptJa).map((item, idx) => (
+                      <span key={idx} className="mr-1">
+                        {item.text}
+                      </span>
+                    ))
+                  ) : (
+                    <p className="opacity-60">この範囲に日本語スクリプトがありません</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
                 <button
                   onClick={cancelEditing}
-                  className="px-6 py-3 rounded-lg transition"
+                  className="flex-1 px-4 py-2.5 rounded-lg transition text-sm"
                   style={{ border: "1px solid var(--card-border)" }}
                 >
                   キャンセル
                 </button>
                 <button
                   onClick={approve}
-                  disabled={processingId === editingRequest.id || getSelectedTranscript().length === 0}
-                  className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                  disabled={processingId === editingRequest.id || getSelectedTranscript(transcript).length === 0}
+                  className="flex-1 bg-green-600 text-white px-4 py-2.5 rounded-lg hover:bg-green-700 transition disabled:opacity-50 text-sm font-bold"
                 >
                   {processingId === editingRequest.id ? "保存中..." : "教材として追加"}
                 </button>
@@ -324,36 +407,48 @@ export default function AdminPage() {
           <p className="opacity-60">保留中のリクエストはありません</p>
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-3 md:gap-4">
           {requests.map((req) => (
             <div
               key={req.id}
-              className="rounded-lg p-4 flex items-center gap-4"
+              className="rounded-lg p-3 md:p-4"
               style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
             >
-              <img
-                src={`https://img.youtube.com/vi/${req.youtube_id}/mqdefault.jpg`}
-                alt={req.title || "リクエスト"}
-                className="w-32 h-20 object-cover rounded"
-              />
-              <div className="flex-1">
-                <h3 className="font-medium">{req.title || "タイトル未設定"}</h3>
-                <p className="text-sm opacity-60">
-                  {new Date(req.created_at).toLocaleDateString("ja-JP")}
-                </p>
-                <p className="text-xs opacity-40 mt-1">{req.youtube_url}</p>
+              {/* Top: Thumbnail + Info */}
+              <div className="flex gap-3 mb-3">
+                <img
+                  src={`https://img.youtube.com/vi/${req.youtube_id}/mqdefault.jpg`}
+                  alt={req.title || "リクエスト"}
+                  className="w-24 h-16 md:w-32 md:h-20 object-cover rounded shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start gap-2 mb-1">
+                    <h3 className="font-medium text-sm md:text-base line-clamp-2">{req.title || "タイトル未設定"}</h3>
+                    <DifficultyBadge difficulty={req.difficulty} />
+                  </div>
+                  <p className="text-xs opacity-60">
+                    {new Date(req.created_at).toLocaleDateString("ja-JP")}
+                    {req.start_time !== undefined && req.end_time && (
+                      <span className="ml-2">
+                        {formatTime(req.start_time)} 〜 {formatTime(req.end_time)}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs opacity-40 mt-0.5 truncate">{req.youtube_url}</p>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              {/* Bottom: Actions */}
+              <div className="flex gap-2">
                 <button
-                  onClick={() => fetchTranscript(req)}
+                  onClick={() => fetchTranscriptData(req)}
                   disabled={editingRequest !== null}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition text-sm disabled:opacity-50"
+                  className="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition text-sm font-bold disabled:opacity-50"
                 >
                   承認
                 </button>
                 <button
                   onClick={() => reject(req.id)}
-                  className="text-red-500 hover:text-red-400 px-4 py-2 text-sm"
+                  className="px-4 py-2 text-red-500 hover:text-red-400 text-sm rounded-lg border border-red-500/30 hover:border-red-500/50 transition"
                 >
                   却下
                 </button>

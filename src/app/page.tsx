@@ -4,22 +4,24 @@ import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import type { Material } from "@/types/models";
+import { MaterialCard } from "@/components/MaterialCard";
+import { DifficultyBadge } from "@/components/DifficultyBadge";
 
-type Material = {
-  id: string;
-  title: string;
-  youtube_id: string;
-  created_at: string;
-};
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
 
 export default function Home() {
   const { user, loading, signInWithGoogle, signOut } = useAuth();
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
   useEffect(() => {
     if (user) {
       loadMaterials();
+      loadFavorites();
     }
   }, [user]);
 
@@ -28,9 +30,66 @@ export default function Home() {
     const { data } = await supabase
       .from("materials")
       .select("*")
+      .order("favorite_count", { ascending: false })
       .order("created_at", { ascending: false });
     setMaterials(data || []);
     setLoadingMaterials(false);
+  };
+
+  const loadFavorites = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("user_favorites")
+      .select("material_id")
+      .eq("user_id", user.id);
+    setFavoriteIds(new Set((data || []).map((f) => f.material_id)));
+  };
+
+  const toggleFavorite = async (materialId: string) => {
+    if (!user) return;
+    const isFav = favoriteIds.has(materialId);
+
+    // Optimistic update for UI (Icon)
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      if (isFav) next.delete(materialId);
+      else next.add(materialId);
+      return next;
+    });
+
+    // Optimistic update for Count
+    setMaterials((prev) =>
+      prev.map((m) =>
+        m.id === materialId
+          ? { ...m, favorite_count: m.favorite_count + (isFav ? -1 : 1) }
+          : m
+      )
+    );
+
+    // DB Update
+    if (isFav) {
+      await supabase
+        .from("user_favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("material_id", materialId);
+    } else {
+      // Enforce 50 favorites limit (Optional: Logic preserved but maybe simpler to just alert if fail? Keeping silent enforcement for now)
+      if (favoriteIds.size >= 50) {
+        const { data: oldest } = await supabase
+          .from("user_favorites")
+          .select("id")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: true })
+          .limit(1);
+        if (oldest && oldest.length > 0) {
+          await supabase.from("user_favorites").delete().eq("id", oldest[0].id);
+        }
+      }
+      await supabase
+        .from("user_favorites")
+        .insert({ user_id: user.id, material_id: materialId });
+    }
   };
 
   const deleteMaterial = async (id: string) => {
@@ -50,7 +109,7 @@ export default function Home() {
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen gap-6">
-        <h1 className="text-3xl font-bold">Shadowing App</h1>
+        <h1 className="text-3xl font-bold">Shadowing Market</h1>
         <p className="opacity-70">YouTube動画でシャドーイング練習</p>
         <button
           onClick={signInWithGoogle}
@@ -82,39 +141,39 @@ export default function Home() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <header className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-bold">Shadowing App</h1>
-        <div className="flex items-center gap-4">
-          <span className="text-sm opacity-70">{user.email}</span>
+    <div className="max-w-6xl mx-auto p-4 md:p-6 pb-20 md:pb-6">
+      <header className="flex items-center justify-between mb-6 md:mb-8 sticky top-0 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md py-3 -mx-6 px-6 md:mx-0 md:px-0 border-b md:border-none border-gray-100 dark:border-gray-800">
+        <h1 className="text-xl md:text-2xl font-bold mr-2">Shadowing Market</h1>
+        <div className="flex items-center gap-2 md:gap-4 shrink-0">
+          <Link href="/mypage" className="text-blue-600 hover:text-blue-700 flex items-center gap-1.5" title="マイページ">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <span className="hidden md:inline text-sm font-medium">マイページ</span>
+          </Link>
+          {isAdmin && (
+            <Link href="/admin" className="text-orange-500 hover:text-orange-600 flex items-center gap-1.5" title="管理者">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span className="hidden md:inline text-sm">管理者</span>
+            </Link>
+          )}
+          <span className="hidden md:block text-sm opacity-70 border-r border-gray-300 pr-4">{user.email}</span>
           <button
             onClick={signOut}
-            className="text-sm opacity-60 hover:opacity-100"
+            className="hidden md:flex text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 items-center gap-1.5"
+            title="ログアウト"
           >
-            ログアウト
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span className="text-sm">ログアウト</span>
           </button>
         </div>
       </header>
 
-      <Link
-        href="/add"
-        className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition mb-8"
-      >
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M12 4v16m8-8H4"
-          />
-        </svg>
-        教材をリクエスト
-      </Link>
 
       {loadingMaterials ? (
         <div className="text-center py-8">
@@ -127,58 +186,47 @@ export default function Home() {
         >
           <p className="opacity-60">まだ教材がありません</p>
           <p className="text-sm opacity-40 mt-2">
-            「新しい教材を追加」から始めましょう
+            「教材をリクエスト」から始めましょう
           </p>
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
           {materials.map((material) => (
-            <div
+            <MaterialCard
               key={material.id}
-              className="rounded-lg p-4 flex items-center gap-4"
-              style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
-            >
-              <img
-                src={`https://img.youtube.com/vi/${material.youtube_id}/mqdefault.jpg`}
-                alt={material.title}
-                className="w-32 h-20 object-cover rounded"
-              />
-              <div className="flex-1">
-                <h3 className="font-medium">{material.title}</h3>
-                <p className="text-sm opacity-60">
-                  {new Date(material.created_at).toLocaleDateString("ja-JP")}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/practice/${material.id}`}
-                  className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition text-sm"
-                >
-                  練習する
-                </Link>
-                <button
-                  onClick={() => deleteMaterial(material.id)}
-                  className="text-red-500 hover:text-red-400 p-2"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
+              material={material}
+              isFavorite={favoriteIds.has(material.id)}
+              onToggleFavorite={toggleFavorite}
+              isAdmin={isAdmin}
+              onDelete={deleteMaterial}
+            />
           ))}
         </div>
       )}
+      <Link
+        href="/add"
+        className="fixed bottom-6 right-6 bg-blue-600 text-white h-14 rounded-full shadow-lg flex items-center overflow-hidden transition-all duration-300 ease-in-out w-14 hover:w-48 group z-50"
+        title="教材をリクエスト"
+      >
+        <div className="flex items-center justify-center w-14 h-14 shrink-0">
+          <svg
+            className="w-8 h-8"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 4v16m8-8H4"
+            />
+          </svg>
+        </div>
+        <span className="whitespace-nowrap font-bold pr-6 opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-100">
+          教材を追加
+        </span>
+      </Link>
     </div>
   );
 }

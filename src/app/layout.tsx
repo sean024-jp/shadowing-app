@@ -9,7 +9,7 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Shadowing App",
+  title: "Shadowing Market",
   description: "YouTube動画でシャドーイング練習",
 };
 

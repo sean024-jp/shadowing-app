@@ -28,6 +28,10 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   const [showJapanese, setShowJapanese] = useState(false); // Default OFF for mobile opt
   const [showMobileVideo, setShowMobileVideo] = useState(false);
 
+  // Mode & Recording State
+  const [practiceMode, setPracticeMode] = useState<"practice" | "recording">("practice");
+  const [recordingState, setRecordingState] = useState<"idle" | "recording" | "review">("idle");
+
   // Audio Recorder Hook
   const recorder = useAudioRecorder(user?.id, material?.id, null);
 
@@ -64,19 +68,6 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     if (user && id) {
       const recordHistory = async () => {
-        // Upsert or Insert history
-        // If we want to keep ONLY the latest practice per material: upsert based on (user_id, material_id)
-        // If we want a log: insert.
-        // MyPage shows unique materials, so probably "Latest".
-        // Let's assume unique constraint on (user_id, material_id) or similar, or just insert and MyPage handles duplicates?
-        // MyPage: .select("*, materials(*)")...
-        // If duplicates exist, MyPage shows all.
-        // Let's check MyPage again. It maps history items to cards.
-        // Let's try to upsert to prevent spamming history if user refreshes.
-        // However, standard SQL upsert needs constraint.
-        // Let's simply delete old one and insert new to be safe? Or just insert.
-        // User asked: "閲覧履歴に過去練習したものが登録されていない" -> Likely nothing was being inserted.
-        // Let's insert.
         const { error } = await supabase
           .from("practice_history")
           .insert({
@@ -85,7 +76,11 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
             practiced_at: new Date().toISOString(),
           });
 
-        if (error) console.error("Failed to record history", error);
+        if (error) {
+          console.error("Failed to record history (practice_history):", error);
+        } else {
+          console.log("History recorded successfully");
+        }
       };
       recordHistory();
     }
@@ -105,45 +100,55 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     }
   };
 
-  // Initialize YouTube Player
-  useEffect(() => {
-    if (!material) return;
+  const handleStartRecording = async () => {
+    if (!material || !playerRef.current) return;
 
-    const tag = document.createElement("script");
-    tag.src = "https://www.youtube.com/iframe_api";
-    const firstScriptTag = document.getElementsByTagName("script")[0];
-    firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    // Preparation
+    setRecordingState("recording");
+    playerRef.current.seekTo(material.start_time, true);
+    playerRef.current.playVideo();
+    await recorder.startRecording();
+  };
 
-    window.onYouTubeIframeAPIReady = () => {
-      // Ensure element exists before creating player
-      if (!document.getElementById("youtube-player")) return;
+  const handleStopRecording = async (shouldSave: boolean) => {
+    // If we're already reviewing or idle, don't re-trigger stopping logic
+    if (recordingState !== "recording") return;
 
-      playerRef.current = new window.YT.Player("youtube-player", {
-        videoId: material.youtube_id,
-        playerVars: {
-          start: material.start_time,
-          end: material.end_time,
-          controls: 1,
-          modestbranding: 1,
-          rel: 0,
-        },
-        events: {
-          onStateChange: onPlayerStateChange,
-          onReady: onPlayerReady,
-        },
-      });
-    };
+    if (playerRef.current) playerRef.current.pauseVideo();
 
-    if (window.YT && window.YT.Player) {
-      window.onYouTubeIframeAPIReady();
+    if (shouldSave) {
+      setRecordingState("review");
+      await recorder.stopRecording();
+    } else {
+      setRecordingState("idle");
+      await recorder.stopRecording(); // Stop hardware
+      recorder.discardRecording(); // Don't show preview
     }
+  };
 
-    return () => {
-      if (playerRef.current && playerRef.current.destroy) {
-        playerRef.current.destroy();
-      }
+  // Ref to hold the latest state and handlers for YouTube callbacks
+  // This prevents closure staleness without re-initializing the player
+  const handlersRef = useRef({
+    practiceMode,
+    recordingState,
+    material,
+    handleStopRecording,
+    setIsPlaying,
+    isLooping,
+    loopRange
+  });
+
+  useEffect(() => {
+    handlersRef.current = {
+      practiceMode,
+      recordingState,
+      material,
+      handleStopRecording,
+      setIsPlaying,
+      isLooping,
+      loopRange
     };
-  }, [material]);
+  }, [practiceMode, recordingState, material, handleStopRecording, isLooping, loopRange]);
 
   // Sync playback rate
   useEffect(() => {
@@ -152,7 +157,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     }
   }, [playbackRate]);
 
-  // Timer loop for detailed time tracking & Looping logic
+  // Timer loop for detailed time tracking & Looping logic & Auto-stop recording
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isPlaying && playerRef.current && playerRef.current.getCurrentTime) {
@@ -160,8 +165,15 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
         const time = playerRef.current.getCurrentTime() || 0;
         setCurrentTime(time);
 
+        // Handle Auto-stop recording
+        if (practiceMode === "recording" && recordingState === "recording" && material) {
+          if (time >= material.end_time) {
+            handleStopRecording(true);
+          }
+        }
+
         // Handle Looping
-        if (isLooping && material) {
+        if (isLooping && material && practiceMode === "practice") {
           const start = loopRange ? loopRange.start : material.start_time;
           const end = loopRange ? loopRange.end : material.end_time;
 
@@ -169,18 +181,94 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
             playerRef.current.seekTo(start, true);
           }
         }
-      }, 100);
+      }, 50); // Faster check for better precision
     }
     return () => clearInterval(interval);
-  }, [isPlaying, isLooping, material, loopRange]);
+  }, [isPlaying, isLooping, material, loopRange, practiceMode, recordingState, handleStopRecording]);
 
   const onPlayerReady = (event: any) => {
     event.target.setPlaybackRate(playbackRate);
   };
 
   const onPlayerStateChange = (event: any) => {
-    setIsPlaying(event.data === window.YT.PlayerState.PLAYING);
+    const {
+      practiceMode,
+      recordingState,
+      material,
+      handleStopRecording,
+      setIsPlaying
+    } = handlersRef.current;
+
+    const playing = event.data === window.YT.PlayerState.PLAYING;
+    const paused = event.data === window.YT.PlayerState.PAUSED;
+    const ended = event.data === window.YT.PlayerState.ENDED;
+
+    setIsPlaying(playing);
+
+    // If recording, handle auto-stop or interruption
+    if (practiceMode === "recording" && recordingState === "recording") {
+      if (ended) {
+        handleStopRecording(true);
+      } else if (paused) {
+        // YouTube often pauses slightly before the actual end_time
+        const time = event.target.getCurrentTime() || 0;
+        if (material && time >= material.end_time - 0.2) {
+          handleStopRecording(true);
+        } else {
+          // Actual manual pause detected during recording -> discard
+          handleStopRecording(false);
+        }
+      }
+    }
   };
+
+  // Initialize YouTube Player
+  useEffect(() => {
+    if (!material) return;
+
+    // Load API if not already present
+    if (!window.YT) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName("script")[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    }
+
+    const initPlayer = () => {
+      if (!document.getElementById("youtube-player")) return;
+      if (playerRef.current) return; // Prevent double init
+
+      playerRef.current = new window.YT.Player("youtube-player", {
+        videoId: material.youtube_id,
+        playerVars: {
+          start: Math.floor(material.start_time),
+          end: Math.ceil(material.end_time),
+          controls: 1,
+          modestbranding: 1,
+          rel: 0,
+        },
+        events: {
+          onStateChange: (e: any) => onPlayerStateChange(e),
+          onReady: (e: any) => onPlayerReady(e),
+        },
+      });
+    };
+
+    if (window.YT && window.YT.Player) {
+      initPlayer();
+    } else {
+      window.onYouTubeIframeAPIReady = initPlayer;
+    }
+
+    return () => {
+      // We don't necessarily want to destroy on every material change if it's the same video,
+      // but the app structure currently expects material-specific players.
+      if (playerRef.current && playerRef.current.destroy) {
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
+    };
+  }, [material?.youtube_id]); // Only re-init if video ID changes
 
   const getCurrentIndex = (transcript: TranscriptItem[]) => {
     if (!transcript) return -1;
@@ -396,6 +484,9 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
       <div className="shrink-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 p-2 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-20">
         <div className="max-w-4xl mx-auto">
           <PlaybackControls
+            practiceMode={practiceMode}
+            onModeToggle={() => setPracticeMode(practiceMode === "practice" ? "recording" : "practice")}
+            recordingState={recordingState}
             isPlaying={isPlaying}
             onTogglePlay={handleTogglePlay}
             onRestart={handleRestart}
@@ -412,6 +503,8 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
             showJapanese={showJapanese}
             onJapaneseToggle={() => setShowJapanese(!showJapanese)}
             hasJapanese={!!material.transcript_ja}
+            onStartRecording={handleStartRecording}
+            onStopRecording={handleStopRecording}
             recorder={recorder}
           />
         </div>

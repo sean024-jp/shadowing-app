@@ -8,15 +8,20 @@ export function useAudioRecorder(userId: string | undefined, materialId: string 
     const [isRecording, setIsRecording] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [audioPath, setAudioPath] = useState<string | null>(initialAudioPath);
-    const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
     const [error, setError] = useState("");
+    const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [previewIsPlaying, setPreviewIsPlaying] = useState(false);
 
     const recorderRef = useRef<AudioRecorder | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const blobRef = useRef<Blob | null>(null);
 
     const startRecording = async () => {
         if (!userId || !materialId) return;
         setError("");
+        setPreviewUrl(null);
+        blobRef.current = null;
         try {
             const recorder = new AudioRecorder();
             await recorder.start();
@@ -28,51 +33,126 @@ export function useAudioRecorder(userId: string | undefined, materialId: string 
     };
 
     const stopRecording = async () => {
-        if (!recorderRef.current || !userId || !materialId) return;
+        if (!recorderRef.current) return;
         setIsRecording(false);
-        setIsUploading(true);
 
         try {
             const blob = await recorderRef.current.stop();
+            blobRef.current = blob;
+            const url = URL.createObjectURL(blob);
+            setPreviewUrl(url);
+        } catch (err) {
+            setError("録音の停止に失敗しました");
+            console.error(err);
+        } finally {
+            recorderRef.current = null;
+        }
+    };
+
+    const saveRecording = async () => {
+        if (!blobRef.current) {
+            console.error("Save failed: No recording blob found");
+            return;
+        }
+        if (!userId || !materialId) {
+            console.error("Save failed: User or Material ID missing", { userId, materialId });
+            return;
+        }
+
+        setIsUploading(true);
+        setError("");
+
+        try {
             const filePath = `${userId}/${materialId}.webm`;
+            console.log("Attempting to upload recording to:", filePath);
 
             // Upload to Supabase Storage (upsert)
             const { error: uploadError } = await supabase.storage
                 .from("practice-recordings")
-                .upload(filePath, blob, { upsert: true, contentType: "audio/webm" });
+                .upload(filePath, blobRef.current, { upsert: true, contentType: "audio/webm" });
 
-            if (uploadError) throw uploadError;
+            if (uploadError) {
+                console.error("Storage upload error:", uploadError);
+                throw new Error(`ストレージへの保存に失敗しました: ${uploadError.message}`);
+            }
 
             // Save/update recording record
-            const { data: existing } = await supabase
+            const { data: existing, error: fetchError } = await supabase
                 .from("practice_recordings")
                 .select("id")
                 .eq("user_id", userId)
                 .eq("material_id", materialId)
-                .single();
+                .maybeSingle(); // Use maybeSingle to avoid error on 0 rows
 
+            if (fetchError) {
+                console.error("DB Fetch error:", fetchError);
+                throw new Error("データの確認に失敗しました");
+            }
+
+            let dbError;
             if (existing) {
-                await supabase
+                const { error } = await supabase
                     .from("practice_recordings")
                     .update({ audio_path: filePath, created_at: new Date().toISOString() })
                     .eq("id", existing.id);
+                dbError = error;
             } else {
-                await supabase.from("practice_recordings").insert({
+                const { error } = await supabase.from("practice_recordings").insert({
                     user_id: userId,
                     material_id: materialId,
                     audio_path: filePath,
                 });
+                dbError = error;
             }
 
+            if (dbError) {
+                console.error("DB Save error:", dbError);
+                throw new Error(`データベースの保存に失敗しました: ${dbError.message}`);
+            }
+
+            console.log("Recording saved successfully");
             setAudioPath(filePath);
-            setPlaybackUrl(null); // Reset so it fetches fresh URL
-        } catch (err) {
-            setError("録音の保存に失敗しました");
+            setPlaybackUrl(null);
+            setPreviewUrl(null);
+            blobRef.current = null;
+        } catch (err: any) {
+            setError(err.message || "録音の保存に失敗しました");
             console.error(err);
         } finally {
             setIsUploading(false);
-            recorderRef.current = null;
         }
+    };
+
+    const togglePreviewPlayback = () => {
+        if (!previewUrl) return;
+
+        if (!audioRef.current || audioRef.current.src !== previewUrl) {
+            const audio = new Audio(previewUrl);
+            audioRef.current = audio;
+            audio.onplay = () => setPreviewIsPlaying(true);
+            audio.onpause = () => setPreviewIsPlaying(false);
+            audio.onended = () => {
+                setPreviewIsPlaying(false);
+                audio.currentTime = 0;
+            };
+        }
+
+        if (previewIsPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play();
+        }
+    };
+
+    const discardRecording = () => {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current = null;
+        }
+        setPreviewUrl(null);
+        setPreviewIsPlaying(false);
+        blobRef.current = null;
+        setError("");
     };
 
     const playRecording = async () => {
@@ -86,24 +166,15 @@ export function useAudioRecorder(userId: string | undefined, materialId: string 
             if (data?.signedUrl) {
                 setPlaybackUrl(data.signedUrl);
                 const audio = new Audio(data.signedUrl);
-                // Clean up previous audio if playing?
-                if (audioRef.current) {
-                    audioRef.current.pause();
-                }
+                if (audioRef.current) audioRef.current.pause();
                 audioRef.current = audio;
                 audio.play();
-
-                // Reset state when done?
-                audio.onended = () => {
-                    // Optional: state change
-                };
             }
         } else {
             if (audioRef.current) {
                 audioRef.current.currentTime = 0;
                 audioRef.current.play();
             } else {
-                // Re-create if ref is lost but url exists
                 const audio = new Audio(playbackUrl);
                 audioRef.current = audio;
                 audio.play();
@@ -141,6 +212,11 @@ export function useAudioRecorder(userId: string | undefined, materialId: string 
         error,
         startRecording,
         stopRecording,
+        saveRecording,
+        discardRecording,
+        previewUrl,
+        previewIsPlaying,
+        togglePreviewPlayback,
         playRecording,
         deleteRecording
     };

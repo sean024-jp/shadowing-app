@@ -132,7 +132,15 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   };
 
   // Mode switch: cue video at start (no buffering, no deadlock)
-  const handleModeToggle = () => {
+  // When switching to recording, request mic permission first
+  const handleModeToggle = async () => {
+    const newMode = practiceMode === "practice" ? "recording" : "practice";
+
+    if (newMode === "recording") {
+      const permitted = await recorder.requestPermission();
+      if (!permitted) return; // Stay in practice mode if mic denied
+    }
+
     if (playerRef.current && material) {
       playerRef.current.cueVideoById({
         videoId: material.youtube_id,
@@ -142,7 +150,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     }
     setIsPlaying(false);
     setRecordingState("idle");
-    setPracticeMode(practiceMode === "practice" ? "recording" : "practice");
+    setPracticeMode(newMode);
   };
 
   const handleStartRecording = async () => {

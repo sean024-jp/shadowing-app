@@ -17,6 +17,24 @@ export function useAudioRecorder(userId: string | undefined, materialId: string 
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const blobRef = useRef<Blob | null>(null);
 
+    const requestPermission = async (): Promise<boolean> => {
+        setError("");
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(track => track.stop());
+            return true;
+        } catch (err: any) {
+            if (err.name === "NotAllowedError") {
+                setError("マイクへのアクセスが拒否されました。ブラウザの設定からマイクの許可を有効にしてください。");
+            } else if (err.name === "NotFoundError") {
+                setError("マイクが見つかりません。マイク付きのデバイスをご使用ください。");
+            } else {
+                setError("マイクの起動に失敗しました。ブラウザの設定を確認してください。");
+            }
+            return false;
+        }
+    };
+
     const startRecording = async () => {
         if (!userId || !materialId) return;
         setError("");
@@ -27,8 +45,14 @@ export function useAudioRecorder(userId: string | undefined, materialId: string 
             await recorder.start();
             recorderRef.current = recorder;
             setIsRecording(true);
-        } catch {
-            setError("マイクへのアクセスが拒否されました");
+        } catch (err: any) {
+            if (err.name === "NotAllowedError") {
+                setError("マイクへのアクセスが拒否されました。ブラウザの設定からマイクの許可を有効にしてください。");
+            } else if (err.name === "NotFoundError") {
+                setError("マイクが見つかりません。マイク付きのデバイスをご使用ください。");
+            } else {
+                setError("マイクの起動に失敗しました。ブラウザの設定を確認してください。");
+            }
         }
     };
 
@@ -210,6 +234,7 @@ export function useAudioRecorder(userId: string | undefined, materialId: string 
         audioPath,
         setAudioPath,
         error,
+        requestPermission,
         startRecording,
         stopRecording,
         saveRecording,

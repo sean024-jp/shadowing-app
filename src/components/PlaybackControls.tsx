@@ -104,8 +104,14 @@ export function PlaybackControls({
             練習モード
           </button>
           <button
-            onClick={() => onModeToggle()}
-            className={`px-4 py-1 rounded-full text-xs font-bold transition ${practiceMode === "recording" ? "bg-white dark:bg-gray-700 shadow-sm text-red-600" : "text-gray-500"}`}
+            onClick={() => { if (playerUnlocked || practiceMode === "recording") onModeToggle(); }}
+            className={`px-4 py-1 rounded-full text-xs font-bold transition ${
+              practiceMode === "recording"
+                ? "bg-white dark:bg-gray-700 shadow-sm text-red-600"
+                : !playerUnlocked
+                  ? "text-gray-300 dark:text-gray-600 cursor-not-allowed"
+                  : "text-gray-500"
+            }`}
           >
             録音モード
           </button>

@@ -22,6 +22,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playerUnlocked, setPlayerUnlocked] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [isLooping, setIsLooping] = useState(false);
   const [showScript, setShowScript] = useState(true);
@@ -250,6 +251,8 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     const ended = event.data === window.YT.PlayerState.ENDED;
 
     setIsPlaying(playing);
+
+    if (playing) setPlayerUnlocked(true);
 
     // If recording, handle auto-stop or interruption
     if (practiceMode === "recording" && recordingState === "recording") {
@@ -544,6 +547,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
             practiceMode={practiceMode}
             onModeToggle={handleModeToggle}
             recordingState={recordingState}
+            playerUnlocked={playerUnlocked}
             isPlaying={isPlaying}
             onTogglePlay={handleTogglePlay}
             onRestart={handleRestart}

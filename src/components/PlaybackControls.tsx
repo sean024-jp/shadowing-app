@@ -7,6 +7,7 @@ type PlaybackControlsProps = {
   recordingState: "idle" | "recording" | "review";
 
   // Playback State
+  playerUnlocked: boolean;
   isPlaying: boolean;
   onTogglePlay: () => void;
   onRestart: () => void;
@@ -58,6 +59,7 @@ export function PlaybackControls({
   practiceMode,
   onModeToggle,
   recordingState,
+  playerUnlocked,
   isPlaying,
   onTogglePlay,
   onRestart,
@@ -156,8 +158,27 @@ export function PlaybackControls({
             </button>
           </div>
         </div>
+      ) : !playerUnlocked ? (
+        /* Pre-unlock: Guide user to tap video first */
+        <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-3 shadow-sm">
+          <span className="text-sm font-bold text-blue-600 dark:text-blue-400 flex-1 text-center">
+            {practiceMode === "recording"
+              ? "▶ 動画をタップしてから録音開始"
+              : "▶ 動画をタップして再生開始"}
+          </span>
+          <div className="flex items-center gap-3 shrink-0">
+            <button onClick={onScriptToggle} className={`p-1.5 rounded transition ${showScript ? "text-blue-600 bg-blue-50 dark:bg-blue-900/30" : "text-gray-400"}`}>
+              <span className="font-serif font-bold text-lg">Aa</span>
+            </button>
+            {hasJapanese && (
+              <button onClick={onJapaneseToggle} className={`p-1.5 rounded transition ${showJapanese ? "text-green-600 bg-green-50 dark:bg-green-900/30" : "text-gray-400"}`}>
+                <span className="font-sans font-bold text-xs">訳</span>
+              </button>
+            )}
+          </div>
+        </div>
       ) : (
-        /* Standard Controls (Practice or Idle/Recording) */
+        /* Standard Controls (Practice or Idle/Recording) — player unlocked */
         <div className={`flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-2 shadow-sm transition-all duration-300 ${practiceMode === 'recording' && recordingState === 'recording' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}>
 
           {/* Left: Playback Controls */}
@@ -253,9 +274,6 @@ export function PlaybackControls({
                 </button>
               )
             ) : (
-              /* Simple Rec button in Practice mode to switch to recording mode or just show existence? 
-                 Actually let's just show past recording if exists. 
-              */
               <div className="flex items-center gap-2">
                 {recorder.audioPath && (
                   <button

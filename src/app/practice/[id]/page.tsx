@@ -130,10 +130,15 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     }
   };
 
-  // Mode switch: pause only, seek happens when recording starts
+  // Mode switch: seek to start then pause
   const handleModeToggle = () => {
     if (playerRef.current) {
-      playerRef.current.pauseVideo();
+      // Seek first while player is active, then pause after buffering settles
+      // (pause→seek causes buffering deadlock, so reverse the order)
+      playerRef.current.seekTo(material?.start_time || 0, true);
+      setTimeout(() => {
+        playerRef.current?.pauseVideo();
+      }, 300);
     }
     setIsPlaying(false);
     setRecordingState("idle");

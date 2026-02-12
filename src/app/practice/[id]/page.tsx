@@ -22,7 +22,6 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [playerUnlocked, setPlayerUnlocked] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [isLooping, setIsLooping] = useState(false);
   const [showScript, setShowScript] = useState(true);
@@ -131,14 +130,10 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     }
   };
 
-  // Mode switch: pause, seek to start, reset state
+  // Mode switch: pause only, seek happens when recording starts
   const handleModeToggle = () => {
     if (playerRef.current) {
       playerRef.current.pauseVideo();
-      // Delay seek to avoid buffering deadlock when pausing and seeking simultaneously
-      setTimeout(() => {
-        playerRef.current?.seekTo(material?.start_time || 0, true);
-      }, 200);
     }
     setIsPlaying(false);
     setRecordingState("idle");
@@ -251,11 +246,6 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     const ended = event.data === window.YT.PlayerState.ENDED;
 
     setIsPlaying(playing);
-
-    // Unlock player after first successful play (needed for mobile autoplay policy)
-    if (playing) {
-      setPlayerUnlocked(true);
-    }
 
     // If recording, handle auto-stop or interruption
     if (practiceMode === "recording" && recordingState === "recording") {
@@ -524,8 +514,6 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
         <div className={`shrink-0 md:w-1/2 lg:w-7/12 bg-gray-50 dark:bg-gray-800 flex flex-col md:p-4 ${!showMobileVideo ? 'mobile-video-hidden' : ''}`}>
           <div className="aspect-video bg-black rounded-lg overflow-hidden shadow-lg relative md:mb-4">
             <div id="youtube-player" className="w-full h-full" />
-            {/* Block direct interaction after first play (mobile needs initial tap on iframe) */}
-            {playerUnlocked && <div className="absolute inset-0 z-10" />}
           </div>
         </div>
         <style jsx>{`
@@ -552,7 +540,6 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
             practiceMode={practiceMode}
             onModeToggle={handleModeToggle}
             recordingState={recordingState}
-            playerUnlocked={playerUnlocked}
             isPlaying={isPlaying}
             onTogglePlay={handleTogglePlay}
             onRestart={handleRestart}

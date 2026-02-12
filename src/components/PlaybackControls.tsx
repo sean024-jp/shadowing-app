@@ -98,7 +98,13 @@ export function PlaybackControls({
       <div className="flex justify-center">
         <div className="bg-gray-100 dark:bg-gray-800 p-1 rounded-full flex gap-1 shadow-inner">
           <button
-            onClick={() => onModeToggle()}
+            onClick={() => {
+              if (practiceMode === "recording" && recordingState === "recording") {
+                if (!confirm("録音を中止しますか？")) return;
+                onStopRecording(false);
+              }
+              onModeToggle();
+            }}
             className={`px-4 py-1 rounded-full text-xs font-bold transition ${practiceMode === "practice" ? "bg-white dark:bg-gray-700 shadow-sm text-blue-600" : "text-gray-500"}`}
           >
             練習モード
@@ -215,7 +221,7 @@ export function PlaybackControls({
                 const next = SPEEDS[(idx + 1) % SPEEDS.length];
                 onSpeedChange(next);
               }}
-              disabled={practiceMode === "recording"}
+              disabled={recordingState === "recording"}
               className="text-xs font-bold w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-600 dark:text-gray-300 disabled:opacity-30"
             >
               {playBackRate}x
@@ -264,7 +270,7 @@ export function PlaybackControls({
             {practiceMode === "recording" ? (
               recordingState === "recording" ? (
                 <button
-                  onClick={() => onStopRecording(false)}
+                  onClick={() => { if (confirm("録音を中止しますか？")) onStopRecording(false); }}
                   className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-red-50"
                   title="ギブアップ（中止）"
                 >

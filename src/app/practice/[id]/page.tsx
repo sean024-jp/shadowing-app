@@ -130,15 +130,14 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     }
   };
 
-  // Mode switch: seek to start then pause
+  // Mode switch: cue video at start (no buffering, no deadlock)
   const handleModeToggle = () => {
-    if (playerRef.current) {
-      // Seek first while player is active, then pause after buffering settles
-      // (pause→seek causes buffering deadlock, so reverse the order)
-      playerRef.current.seekTo(material?.start_time || 0, true);
-      setTimeout(() => {
-        playerRef.current?.pauseVideo();
-      }, 300);
+    if (playerRef.current && material) {
+      playerRef.current.cueVideoById({
+        videoId: material.youtube_id,
+        startSeconds: material.start_time,
+        endSeconds: material.end_time,
+      });
     }
     setIsPlaying(false);
     setRecordingState("idle");

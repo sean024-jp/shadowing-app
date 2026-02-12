@@ -27,7 +27,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   const [isLooping, setIsLooping] = useState(false);
   const [showScript, setShowScript] = useState(true);
   const [showJapanese, setShowJapanese] = useState(false); // Default OFF for mobile opt
-  const [showMobileVideo, setShowMobileVideo] = useState(false);
+  const [showMobileVideo, setShowMobileVideo] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
 
   // Mode & Recording State
@@ -549,6 +549,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
             practiceMode={practiceMode}
             onModeToggle={handleModeToggle}
             recordingState={recordingState}
+            playerUnlocked={playerUnlocked}
             isPlaying={isPlaying}
             onTogglePlay={handleTogglePlay}
             onRestart={handleRestart}

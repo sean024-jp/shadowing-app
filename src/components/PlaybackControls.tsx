@@ -7,6 +7,7 @@ type PlaybackControlsProps = {
   recordingState: "idle" | "recording" | "review";
 
   // Playback State
+  playerUnlocked: boolean;
   isPlaying: boolean;
   onTogglePlay: () => void;
   onRestart: () => void;
@@ -58,6 +59,7 @@ export function PlaybackControls({
   practiceMode,
   onModeToggle,
   recordingState,
+  playerUnlocked,
   isPlaying,
   onTogglePlay,
   onRestart,
@@ -160,39 +162,45 @@ export function PlaybackControls({
         /* Standard Controls (Practice or Idle/Recording) */
         <div className={`flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-2 shadow-sm transition-all duration-300 ${practiceMode === 'recording' && recordingState === 'recording' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}>
 
-          {/* Left: Playback Controls (Always visible, but disabled in recording mode to prevent interruption) */}
+          {/* Left: Playback Controls */}
           <div className="flex items-center gap-4">
-            <button
-              onClick={onRestart}
-              disabled={practiceMode === "recording"}
-              className={`text-gray-600 dark:text-gray-300 hover:text-blue-600 disabled:opacity-30`}
-            >
-              <Icon path={icons.restart} />
-            </button>
+            {!playerUnlocked ? (
+              <span className="text-xs text-gray-400 px-1">動画をタップして開始</span>
+            ) : (
+              <>
+                <button
+                  onClick={onRestart}
+                  disabled={practiceMode === "recording"}
+                  className={`text-gray-600 dark:text-gray-300 hover:text-blue-600 disabled:opacity-30`}
+                >
+                  <Icon path={icons.restart} />
+                </button>
 
-            <button
-              onClick={onTogglePlay}
-              disabled={practiceMode === "recording"}
-              className={`text-blue-600 dark:text-blue-400 hover:scale-110 transition disabled:opacity-30`}
-            >
-              {isPlaying ? (
-                <Icon path={icons.pause} className="w-10 h-10" />
-              ) : (
-                <Icon path={icons.play} className="w-10 h-10" />
-              )}
-            </button>
+                <button
+                  onClick={onTogglePlay}
+                  disabled={practiceMode === "recording"}
+                  className={`text-blue-600 dark:text-blue-400 hover:scale-110 transition disabled:opacity-30`}
+                >
+                  {isPlaying ? (
+                    <Icon path={icons.pause} className="w-10 h-10" />
+                  ) : (
+                    <Icon path={icons.play} className="w-10 h-10" />
+                  )}
+                </button>
 
-            <button
-              onClick={() => {
-                const idx = SPEEDS.indexOf(playBackRate);
-                const next = SPEEDS[(idx + 1) % SPEEDS.length];
-                onSpeedChange(next);
-              }}
-              disabled={practiceMode === "recording"}
-              className="text-xs font-bold w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-600 dark:text-gray-300 disabled:opacity-30"
-            >
-              {playBackRate}x
-            </button>
+                <button
+                  onClick={() => {
+                    const idx = SPEEDS.indexOf(playBackRate);
+                    const next = SPEEDS[(idx + 1) % SPEEDS.length];
+                    onSpeedChange(next);
+                  }}
+                  disabled={practiceMode === "recording"}
+                  className="text-xs font-bold w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-600 dark:text-gray-300 disabled:opacity-30"
+                >
+                  {playBackRate}x
+                </button>
+              </>
+            )}
           </div>
 
           {/* Center: A-B Loop (Only practice mode) */}

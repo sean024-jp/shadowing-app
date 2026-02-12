@@ -515,17 +515,15 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
         <div className={`shrink-0 md:w-1/2 lg:w-7/12 bg-gray-50 dark:bg-gray-800 flex flex-col md:p-4 ${!showMobileVideo ? 'mobile-video-hidden' : ''}`}>
           <div className="aspect-video bg-black rounded-lg overflow-hidden shadow-lg relative md:mb-4">
             <div id="youtube-player" className="w-full h-full" />
+            {/* Block direct interaction with YouTube iframe */}
+            <div className="absolute inset-0 z-10" />
           </div>
         </div>
         <style jsx>{`
           @media (max-width: 767px) {
             .mobile-video-hidden {
-              position: absolute;
-              width: 1px;
-              height: 1px;
+              height: 0;
               overflow: hidden;
-              opacity: 0;
-              pointer-events: none;
             }
           }
         `}</style>

@@ -135,7 +135,10 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   const handleModeToggle = () => {
     if (playerRef.current) {
       playerRef.current.pauseVideo();
-      playerRef.current.seekTo(material?.start_time || 0, true);
+      // Delay seek to avoid buffering deadlock when pausing and seeking simultaneously
+      setTimeout(() => {
+        playerRef.current?.seekTo(material?.start_time || 0, true);
+      }, 200);
     }
     setIsPlaying(false);
     setRecordingState("idle");

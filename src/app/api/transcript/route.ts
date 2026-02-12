@@ -59,11 +59,16 @@ async function fetchTranscriptWithYtDlp(
 
   const result: Record<string, TranscriptItem[]> = {};
 
+  const cmd = `yt-dlp --write-auto-sub --sub-lang ${langStr} --sub-format json3 --skip-download -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
+
   try {
-    const cmd = `yt-dlp --write-auto-sub --sub-lang ${langStr} --sub-format json3 --skip-download -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
-
     await execAsync(cmd, { timeout: 30000 });
+  } catch {
+    // yt-dlp may exit non-zero if some languages fail (e.g. 429 for ja)
+    // Continue and read whatever files were downloaded successfully
+  }
 
+  try {
     for (const lang of langs) {
       const subtitlePath = `${outputPath}.${lang}.json3`;
       try {
@@ -76,9 +81,13 @@ async function fetchTranscriptWithYtDlp(
       }
     }
 
+    if (Object.keys(result).length === 0) {
+      throw new Error("字幕を取得できませんでした");
+    }
+
     return result;
   } catch (error) {
-    // Clean up any files
+    // Clean up any remaining files
     for (const lang of langs) {
       try { await unlink(`${outputPath}.${lang}.json3`); } catch { /* ignore */ }
     }

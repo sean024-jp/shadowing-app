@@ -219,10 +219,11 @@ export default function MyPage() {
                                     {requests.map((req) => (
                                         <div
                                             key={req.id}
-                                            className="bg-white rounded-lg p-4 border border-gray-200"
+                                            className="rounded-lg p-4"
+                                            style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
                                         >
                                             <div className="flex justify-between items-start mb-2">
-                                                <h3 className="font-bold text-gray-800 line-clamp-1">
+                                                <h3 className="font-bold text-gray-800 dark:text-gray-100 line-clamp-1">
                                                     {req.title || "（タイトル未設定）"}
                                                 </h3>
                                                 <span
@@ -269,7 +270,8 @@ export default function MyPage() {
                                     {recordings.map((rec) => (
                                         <div
                                             key={rec.id}
-                                            className="bg-white rounded-lg p-4 border border-gray-200"
+                                            className="rounded-lg p-4"
+                                            style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
                                         >
                                             <div className="flex items-center gap-4 mb-3">
                                                 <img

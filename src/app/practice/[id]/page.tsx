@@ -27,6 +27,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   const [showScript, setShowScript] = useState(true);
   const [showJapanese, setShowJapanese] = useState(false); // Default OFF for mobile opt
   const [showMobileVideo, setShowMobileVideo] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
 
   // Mode & Recording State
   const [practiceMode, setPracticeMode] = useState<"practice" | "recording">("practice");
@@ -35,17 +36,19 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   // Audio Recorder Hook
   const recorder = useAudioRecorder(user?.id, material?.id, null);
 
-  // A-B Loop State
-  const [loopRange, setLoopRange] = useState<{ start: number; end: number } | null>(null);
+  // A-B Loop State (independent A/B points)
+  const [loopA, setLoopA] = useState<number | null>(null);
+  const [loopB, setLoopB] = useState<number | null>(null);
 
   const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load material and recording
+  // Load material, recording, and favorite status
   useEffect(() => {
     if (user) {
       loadMaterial();
       loadRecording();
+      loadFavoriteStatus();
     }
   }, [user, id]);
 
@@ -100,6 +103,44 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     }
   };
 
+  const loadFavoriteStatus = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("user_favorites")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("material_id", id)
+      .maybeSingle();
+    setIsFavorite(!!data);
+  };
+
+  const toggleFavorite = async () => {
+    if (!user) return;
+    setIsFavorite((prev) => !prev);
+    if (isFavorite) {
+      await supabase
+        .from("user_favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("material_id", id);
+    } else {
+      await supabase
+        .from("user_favorites")
+        .insert({ user_id: user.id, material_id: id });
+    }
+  };
+
+  // Mode switch: pause, seek to start, reset state
+  const handleModeToggle = () => {
+    if (playerRef.current) {
+      playerRef.current.pauseVideo();
+      playerRef.current.seekTo(material?.start_time || 0, true);
+    }
+    setIsPlaying(false);
+    setRecordingState("idle");
+    setPracticeMode(practiceMode === "practice" ? "recording" : "practice");
+  };
+
   const handleStartRecording = async () => {
     if (!material || !playerRef.current) return;
 
@@ -135,7 +176,8 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     handleStopRecording,
     setIsPlaying,
     isLooping,
-    loopRange
+    loopA,
+    loopB
   });
 
   useEffect(() => {
@@ -146,9 +188,10 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
       handleStopRecording,
       setIsPlaying,
       isLooping,
-      loopRange
+      loopA,
+      loopB
     };
-  }, [practiceMode, recordingState, material, handleStopRecording, isLooping, loopRange]);
+  }, [practiceMode, recordingState, material, handleStopRecording, isLooping, loopA, loopB]);
 
   // Sync playback rate
   useEffect(() => {
@@ -174,17 +217,17 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
 
         // Handle Looping
         if (isLooping && material && practiceMode === "practice") {
-          const start = loopRange ? loopRange.start : material.start_time;
-          const end = loopRange ? loopRange.end : material.end_time;
+          const start = loopA ?? material.start_time;
+          const end = loopB ?? material.end_time;
 
-          if (time >= end) {
+          if (start < end && time >= end) {
             playerRef.current.seekTo(start, true);
           }
         }
       }, 50); // Faster check for better precision
     }
     return () => clearInterval(interval);
-  }, [isPlaying, isLooping, material, loopRange, practiceMode, recordingState, handleStopRecording]);
+  }, [isPlaying, isLooping, material, loopA, loopB, practiceMode, recordingState, handleStopRecording]);
 
   const onPlayerReady = (event: any) => {
     event.target.setPlaybackRate(playbackRate);
@@ -243,9 +286,11 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
         playerVars: {
           start: Math.floor(material.start_time),
           end: Math.ceil(material.end_time),
-          controls: 1,
+          controls: 0,
+          disablekb: 1,
           modestbranding: 1,
           rel: 0,
+          iv_load_policy: 3,
         },
         events: {
           onStateChange: (e: any) => onPlayerStateChange(e),
@@ -325,25 +370,27 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     }
   };
 
-  // Loop Control Handlers
-  const handleSetLoopStart = () => {
-    if (!material) return;
-    const start = playerRef.current ? playerRef.current.getCurrentTime() : material.start_time;
-    const end = loopRange ? loopRange.end : material.end_time;
-    setLoopRange({ start, end: Math.max(start + 1, end) }); // Ensure end > start
-    setIsLooping(true);
+  // Loop Control Handlers (independent A/B toggle)
+  const handleToggleLoopA = () => {
+    if (loopA !== null) {
+      setLoopA(null);
+      if (loopB === null) setIsLooping(false);
+    } else {
+      const time = playerRef.current ? playerRef.current.getCurrentTime() : (material?.start_time ?? 0);
+      setLoopA(time);
+      setIsLooping(true);
+    }
   };
 
-  const handleSetLoopEnd = () => {
-    if (!material) return;
-    const end = playerRef.current ? playerRef.current.getCurrentTime() : material.end_time;
-    const start = loopRange ? loopRange.start : material.start_time;
-    setLoopRange({ start: Math.min(start, end - 1), end }); // Ensure start < end
-    setIsLooping(true);
-  };
-
-  const handleClearLoop = () => {
-    setLoopRange(null);
+  const handleToggleLoopB = () => {
+    if (loopB !== null) {
+      setLoopB(null);
+      if (loopA === null) setIsLooping(false);
+    } else {
+      const time = playerRef.current ? playerRef.current.getCurrentTime() : (material?.end_time ?? 60);
+      setLoopB(time);
+      setIsLooping(true);
+    }
   };
 
   if (loading) {
@@ -427,12 +474,22 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     <div className="flex flex-col h-[100dvh] bg-white dark:bg-gray-900">
       {/* Header - Compact */}
       <div className="shrink-0 flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 z-10">
-        <Link href="/" className="text-blue-600 hover:underline flex items-center gap-1 text-sm">
+        <Link href="/" className="text-blue-600 hover:underline flex items-center gap-1 text-sm shrink-0">
           ← 戻る
         </Link>
         <h1 className="text-sm font-bold text-gray-800 dark:text-gray-200 line-clamp-1 flex-1 text-center px-2">
           {material.title}
         </h1>
+        {/* Favorite star */}
+        <button
+          onClick={toggleFavorite}
+          className="shrink-0 w-8 h-8 flex items-center justify-center"
+          title={isFavorite ? "お気に入り解除" : "お気に入り追加"}
+        >
+          <svg className="w-5 h-5" fill={isFavorite ? "#eab308" : "none"} stroke="#eab308" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+          </svg>
+        </button>
         {/* Mobile video toggle */}
         <button
           onClick={() => setShowMobileVideo(!showMobileVideo)}
@@ -457,6 +514,8 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
         <div className={`shrink-0 md:w-1/2 lg:w-7/12 bg-gray-50 dark:bg-gray-800 flex flex-col md:p-4 ${!showMobileVideo ? 'mobile-video-hidden' : ''}`}>
           <div className="aspect-video bg-black rounded-lg overflow-hidden shadow-lg relative md:mb-4">
             <div id="youtube-player" className="w-full h-full" />
+            {/* Block direct interaction with YouTube iframe */}
+            <div className="absolute inset-0" />
           </div>
         </div>
         <style jsx>{`
@@ -485,7 +544,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
         <div className="max-w-4xl mx-auto">
           <PlaybackControls
             practiceMode={practiceMode}
-            onModeToggle={() => setPracticeMode(practiceMode === "practice" ? "recording" : "practice")}
+            onModeToggle={handleModeToggle}
             recordingState={recordingState}
             isPlaying={isPlaying}
             onTogglePlay={handleTogglePlay}
@@ -494,10 +553,10 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
             onSpeedChange={setPlaybackRate}
             loop={isLooping}
             onLoopToggle={() => setIsLooping(!isLooping)}
-            loopRange={loopRange}
-            onSetLoopStart={handleSetLoopStart}
-            onSetLoopEnd={handleSetLoopEnd}
-            onClearLoop={handleClearLoop}
+            loopA={loopA}
+            loopB={loopB}
+            onToggleLoopA={handleToggleLoopA}
+            onToggleLoopB={handleToggleLoopB}
             showScript={showScript}
             onScriptToggle={() => setShowScript(!showScript)}
             showJapanese={showJapanese}

@@ -1,7 +1,5 @@
 "use client";
 
-import { useAudioRecorder } from "@/hooks/useAudioRecorder"; // Type definition only if needed, but we pass props
-
 type PlaybackControlsProps = {
   // Mode State
   practiceMode: "practice" | "recording";
@@ -18,10 +16,10 @@ type PlaybackControlsProps = {
   // Loop State
   loop: boolean;
   onLoopToggle: () => void;
-  loopRange: { start: number; end: number } | null;
-  onSetLoopStart: () => void;
-  onSetLoopEnd: () => void;
-  onClearLoop: () => void;
+  loopA: number | null;
+  loopB: number | null;
+  onToggleLoopA: () => void;
+  onToggleLoopB: () => void;
 
   // Display State
   showScript: boolean;
@@ -67,10 +65,10 @@ export function PlaybackControls({
   onSpeedChange,
   loop,
   onLoopToggle,
-  loopRange,
-  onSetLoopStart,
-  onSetLoopEnd,
-  onClearLoop,
+  loopA,
+  loopB,
+  onToggleLoopA,
+  onToggleLoopB,
   showScript,
   onScriptToggle,
   showJapanese,
@@ -207,14 +205,9 @@ export function PlaybackControls({
                 <Icon path={icons.loopRounded} className="w-6 h-6" />
               </button>
               <div className="flex gap-1 bg-gray-200 dark:bg-gray-700 rounded-full p-1">
-                <button onClick={onSetLoopStart} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition ${loopRange ? "bg-purple-600 text-white" : "bg-white dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-purple-100"}`}>A</button>
-                <button onClick={onSetLoopEnd} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition ${loopRange ? "bg-purple-600 text-white" : "bg-white dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-purple-100"}`}>B</button>
+                <button onClick={onToggleLoopA} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition ${loopA !== null ? "bg-purple-600 text-white" : "bg-white dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-purple-100"}`}>A</button>
+                <button onClick={onToggleLoopB} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition ${loopB !== null ? "bg-purple-600 text-white" : "bg-white dark:bg-gray-600 text-gray-600 dark:text-gray-300 hover:bg-purple-100"}`}>B</button>
               </div>
-              {loopRange && (
-                <button onClick={onClearLoop} className="text-gray-400 hover:text-red-500">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
-                </button>
-              )}
             </div>
           ) : (
             <div className="flex-1 flex justify-center">

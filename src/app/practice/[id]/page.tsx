@@ -288,6 +288,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
           end: Math.ceil(material.end_time),
           controls: 0,
           disablekb: 1,
+          playsinline: 1,
           modestbranding: 1,
           rel: 0,
           iv_load_policy: 3,
@@ -514,8 +515,6 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
         <div className={`shrink-0 md:w-1/2 lg:w-7/12 bg-gray-50 dark:bg-gray-800 flex flex-col md:p-4 ${!showMobileVideo ? 'mobile-video-hidden' : ''}`}>
           <div className="aspect-video bg-black rounded-lg overflow-hidden shadow-lg relative md:mb-4">
             <div id="youtube-player" className="w-full h-full" />
-            {/* Block direct interaction with YouTube iframe */}
-            <div className="absolute inset-0" />
           </div>
         </div>
         <style jsx>{`

@@ -6,6 +6,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { DifficultyBadge } from "@/components/DifficultyBadge";
 import type { Difficulty, TranscriptItem } from "@/types/models";
+import { calculateWPM, getWPMLabel } from "@/lib/wpm";
 
 type MaterialRequest = {
   id: string;
@@ -116,6 +117,7 @@ export default function AdminPage() {
 
     const selectedEn = getSelectedTranscript(transcript);
     const selectedJa = getSelectedTranscript(transcriptJa);
+    const wpm = calculateWPM(selectedEn, startTime, endTime);
 
     const { error: saveError } = await supabase.from("materials").insert({
       user_id: user.id,
@@ -127,6 +129,7 @@ export default function AdminPage() {
       transcript: selectedEn,
       transcript_ja: selectedJa.length > 0 ? selectedJa : null,
       difficulty,
+      wpm,
     });
 
     if (saveError) {
@@ -281,9 +284,16 @@ export default function AdminPage() {
               </div>
 
               <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700">
-                <p className="text-xs font-medium text-gray-500 mb-2">
-                  範囲: {formatTime(startTime)} 〜 {formatTime(endTime)}（{endTime - startTime}秒）
-                </p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-medium text-gray-500">
+                    範囲: {formatTime(startTime)} 〜 {formatTime(endTime)}（{endTime - startTime}秒）
+                  </p>
+                  {getSelectedTranscript(transcript).length > 0 && (
+                    <p className="text-xs font-bold text-blue-600 dark:text-blue-400">
+                      {calculateWPM(getSelectedTranscript(transcript), startTime, endTime)} WPM ({getWPMLabel(calculateWPM(getSelectedTranscript(transcript), startTime, endTime))})
+                    </p>
+                  )}
+                </div>
                 <div className="space-y-3">
                   <div>
                     <div className="flex justify-between text-xs text-gray-500 mb-1">

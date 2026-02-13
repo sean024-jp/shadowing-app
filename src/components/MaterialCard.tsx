@@ -1,11 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { Material } from "@/types/models";
+import type { Difficulty } from "@/types/models";
 import { DifficultyBadge } from "./DifficultyBadge";
 
 type MaterialCardProps = {
-    material: Material;
+    material: {
+        id: string;
+        title: string;
+        youtube_id: string;
+        start_time: number;
+        end_time: number;
+        difficulty: Difficulty | null;
+        wpm: number | null;
+        favorite_count: number;
+        created_at: string;
+    };
     isFavorite: boolean;
     onToggleFavorite: (id: string) => void;
     isAdmin?: boolean;
@@ -49,6 +59,11 @@ export function MaterialCard({
 
                 <div className="flex items-center gap-2 mb-3">
                     <DifficultyBadge difficulty={material.difficulty} />
+                    {material.wpm && (
+                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                            {material.wpm} WPM
+                        </span>
+                    )}
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                         {new Date(material.created_at).toLocaleDateString("ja-JP")}
                     </span>

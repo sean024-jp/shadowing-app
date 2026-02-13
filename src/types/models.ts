@@ -16,6 +16,7 @@ export type Material = {
   transcript: TranscriptItem[];
   transcript_ja: TranscriptItem[] | null;
   difficulty: Difficulty | null;
+  wpm: number | null;
   favorite_count: number;
   created_at: string;
 };

@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { DifficultyBadge } from "@/components/DifficultyBadge";
-import type { Difficulty, TranscriptItem } from "@/types/models";
+import type { TranscriptItem } from "@/types/models";
 import { calculateWPM, getWPMLabel } from "@/lib/wpm";
 
 type MaterialRequest = {
@@ -13,7 +12,6 @@ type MaterialRequest = {
   youtube_url: string;
   youtube_id: string;
   title: string | null;
-  difficulty: Difficulty | null;
   start_time: number;
   end_time: number | null;
   status: string;
@@ -35,7 +33,6 @@ export default function AdminPage() {
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
   const [transcriptJa, setTranscriptJa] = useState<TranscriptItem[]>([]);
   const [title, setTitle] = useState("");
-  const [difficulty, setDifficulty] = useState<Difficulty>("beginner");
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(60);
   const [fetchingTranscript, setFetchingTranscript] = useState(false);
@@ -63,7 +60,6 @@ export default function AdminPage() {
     setFetchingTranscript(true);
     setEditingRequest(req);
     setTitle(req.title || "");
-    setDifficulty(req.difficulty || "beginner");
     setStartTime(req.start_time || 0);
     setEndTime(req.end_time || 60);
 
@@ -128,7 +124,6 @@ export default function AdminPage() {
       end_time: endTime,
       transcript: selectedEn,
       transcript_ja: selectedJa.length > 0 ? selectedJa : null,
-      difficulty,
       wpm,
     });
 
@@ -260,27 +255,6 @@ export default function AdminPage() {
                     color: "var(--foreground)",
                   }}
                 />
-              </div>
-
-              <div>
-                <label className="block mb-1.5 font-medium text-sm">難易度</label>
-                <div className="flex gap-2">
-                  {(["beginner", "intermediate", "advanced"] as Difficulty[]).map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setDifficulty(d)}
-                      className={`flex-1 px-3 py-2 rounded-lg transition text-sm ${difficulty === d ? "bg-blue-600 text-white" : ""
-                        }`}
-                      style={
-                        difficulty !== d
-                          ? { background: "var(--input-bg)", border: "1px solid var(--input-border)" }
-                          : undefined
-                      }
-                    >
-                      {d === "beginner" ? "初級" : d === "intermediate" ? "中級" : "上級"}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               <div className="p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700">
@@ -432,10 +406,7 @@ export default function AdminPage() {
                   className="w-24 h-16 md:w-32 md:h-20 object-cover rounded shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start gap-2 mb-1">
-                    <h3 className="font-medium text-sm md:text-base line-clamp-2">{req.title || "タイトル未設定"}</h3>
-                    <DifficultyBadge difficulty={req.difficulty} />
-                  </div>
+                  <h3 className="font-medium text-sm md:text-base line-clamp-2 mb-1">{req.title || "タイトル未設定"}</h3>
                   <p className="text-xs opacity-60">
                     {new Date(req.created_at).toLocaleDateString("ja-JP")}
                     {req.start_time !== undefined && req.end_time && (

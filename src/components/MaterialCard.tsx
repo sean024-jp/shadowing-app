@@ -1,8 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import type { Difficulty } from "@/types/models";
-import { DifficultyBadge } from "./DifficultyBadge";
 
 type MaterialCardProps = {
     material: {
@@ -11,7 +9,6 @@ type MaterialCardProps = {
         youtube_id: string;
         start_time: number;
         end_time: number;
-        difficulty: Difficulty | null;
         wpm: number | null;
         favorite_count: number;
         created_at: string;
@@ -58,7 +55,6 @@ export function MaterialCard({
                 </div>
 
                 <div className="flex items-center gap-2 mb-3">
-                    <DifficultyBadge difficulty={material.difficulty} />
                     {material.wpm && (
                         <span className="text-xs font-bold px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
                             {material.wpm} WPM

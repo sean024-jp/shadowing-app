@@ -4,7 +4,6 @@ import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { Difficulty } from "@/types/models";
 import { MaterialCard } from "@/components/MaterialCard";
 
 type MaterialListItem = {
@@ -13,20 +12,12 @@ type MaterialListItem = {
   youtube_id: string;
   start_time: number;
   end_time: number;
-  difficulty: Difficulty | null;
   wpm: number | null;
   favorite_count: number;
   created_at: string;
 };
 
 const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-
-const DIFFICULTY_FILTERS: { value: Difficulty | "all"; label: string }[] = [
-  { value: "all", label: "すべて" },
-  { value: "beginner", label: "初級" },
-  { value: "intermediate", label: "中級" },
-  { value: "advanced", label: "上級" },
-];
 
 type WPMFilter = "all" | "slow" | "normal" | "fast";
 const WPM_FILTERS: { value: WPMFilter; label: string; range: (wpm: number) => boolean }[] = [
@@ -41,7 +32,6 @@ export default function Home() {
   const [materials, setMaterials] = useState<MaterialListItem[]>([]);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
-  const [difficultyFilter, setDifficultyFilter] = useState<Difficulty | "all">("all");
   const [wpmFilter, setWpmFilter] = useState<WPMFilter>("all");
 
   const isAdmin = Boolean(user?.email && ADMIN_EMAIL && user.email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim());
@@ -57,7 +47,7 @@ export default function Home() {
     setLoadingMaterials(true);
     const { data } = await supabase
       .from("materials")
-      .select("id, title, youtube_id, start_time, end_time, difficulty, wpm, favorite_count, created_at")
+      .select("id, title, youtube_id, start_time, end_time, wpm, favorite_count, created_at")
       .order("favorite_count", { ascending: false })
       .order("created_at", { ascending: false });
     setMaterials(data || []);
@@ -203,22 +193,6 @@ export default function Home() {
       </header>
 
 
-      {/* Difficulty Filter */}
-      <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
-        {DIFFICULTY_FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => setDifficultyFilter(f.value)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${difficultyFilter === f.value
-                ? "bg-blue-600 text-white"
-                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-              }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
       {/* WPM Filter */}
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
         {WPM_FILTERS.map((f) => (
@@ -253,10 +227,8 @@ export default function Home() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
           {materials
             .filter((m) => {
-              const difficultyMatch = difficultyFilter === "all" || m.difficulty === difficultyFilter;
               const wpmFilterConfig = WPM_FILTERS.find((f) => f.value === wpmFilter);
-              const wpmMatch = !wpmFilterConfig || wpmFilterConfig.value === "all" || (m.wpm !== null && wpmFilterConfig.range(m.wpm));
-              return difficultyMatch && wpmMatch;
+              return !wpmFilterConfig || wpmFilterConfig.value === "all" || (m.wpm !== null && wpmFilterConfig.range(m.wpm));
             })
             .map((material) => (
               <MaterialCard

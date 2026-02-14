@@ -54,7 +54,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
   }, [user, id]);
 
   const loadMaterial = async () => {
-    const { data, error } = await supabase
+    const { data, error} = await supabase
       .from("materials")
       .select("*")
       .eq("id", id)
@@ -67,28 +67,6 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     }
     setLoading(false);
   };
-
-  // Record practice history
-  useEffect(() => {
-    if (user && id) {
-      const recordHistory = async () => {
-        const { error } = await supabase
-          .from("practice_history")
-          .insert({
-            user_id: user.id,
-            material_id: id,
-            practiced_at: new Date().toISOString(),
-          });
-
-        if (error) {
-          console.error("Failed to record history (practice_history):", error);
-        } else {
-          console.log("History recorded successfully");
-        }
-      };
-      recordHistory();
-    }
-  }, [user, id]);
 
   const loadRecording = async () => {
     if (!user) return;

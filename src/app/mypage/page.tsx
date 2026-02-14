@@ -4,11 +4,10 @@ import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Material, MaterialRequest, PracticeHistory, PracticeRecording } from "@/types/models";
+import { Material, MaterialRequest, PracticeRecording } from "@/types/models";
 import { MaterialCard } from "@/components/MaterialCard";
-import { DifficultyBadge } from "@/components/DifficultyBadge";
 
-type Tab = "favorites" | "history" | "requests" | "recordings";
+type Tab = "favorites" | "requests" | "recordings";
 
 export default function MyPage() {
     const { user, signOut } = useAuth();
@@ -17,7 +16,6 @@ export default function MyPage() {
 
     // Data states
     const [favorites, setFavorites] = useState<Material[]>([]);
-    const [history, setHistory] = useState<(PracticeHistory & { materials: Material })[]>([]);
     const [requests, setRequests] = useState<MaterialRequest[]>([]);
     const [recordings, setRecordings] = useState<(PracticeRecording & { materials: Material; signedUrl?: string })[]>([]);
 
@@ -44,14 +42,6 @@ export default function MyPage() {
                     const mats = data.map((d: any) => d.materials).filter(Boolean);
                     setFavorites(mats);
                 }
-            } else if (activeTab === "history") {
-                const { data } = await supabase
-                    .from("practice_history")
-                    .select("*, materials(*)")
-                    .eq("user_id", user.id)
-                    .order("practiced_at", { ascending: false });
-
-                if (data) setHistory(data as any);
             } else if (activeTab === "requests") {
                 const { data } = await supabase
                     .from("material_requests")
@@ -111,8 +101,7 @@ export default function MyPage() {
 
     const tabs: { id: Tab; label: string }[] = [
         { id: "favorites", label: "お気に入り" },
-        { id: "history", label: "練習履歴" }, // Technically practice history
-        { id: "recordings", label: "録音" },
+        { id: "recordings", label: "録音履歴" },
         { id: "requests", label: "リクエスト" },
     ];
 
@@ -185,30 +174,6 @@ export default function MyPage() {
                         </>
                     )}
 
-                    {/* History Tab */}
-                    {activeTab === "history" && (
-                        <>
-                            {history.length === 0 ? (
-                                <p className="text-center text-gray-500 py-8">練習履歴はありません</p>
-                            ) : (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {history.map((item) => (
-                                        <div key={item.id} className="relative">
-                                            <MaterialCard
-                                                material={item.materials}
-                                                isFavorite={false} // Would need to fetch fav status separately or join fancier
-                                                onToggleFavorite={() => { }} // Disabled in history view for simplicity or add logic
-                                            />
-                                            <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">
-                                                {new Date(item.practiced_at).toLocaleString("ja-JP")}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </>
-                    )}
-
                     {/* Requests Tab */}
                     {activeTab === "requests" && (
                         <>
@@ -251,7 +216,6 @@ export default function MyPage() {
                                             </a>
                                             <div className="flex items-center gap-2 text-xs text-gray-500">
                                                 <span>{new Date(req.created_at).toLocaleDateString("ja-JP")}</span>
-                                                {req.difficulty && <DifficultyBadge difficulty={req.difficulty} />}
                                             </div>
                                         </div>
                                     ))}
@@ -264,37 +228,57 @@ export default function MyPage() {
                     {activeTab === "recordings" && (
                         <>
                             {recordings.length === 0 ? (
-                                <p className="text-center text-gray-500 py-8">録音データはありません</p>
+                                <p className="text-center text-gray-500 py-8">録音履歴はありません</p>
                             ) : (
                                 <div className="grid gap-4">
                                     {recordings.map((rec) => (
                                         <div
                                             key={rec.id}
-                                            className="rounded-lg p-4"
+                                            className="rounded-lg p-4 hover:shadow-md transition"
                                             style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
                                         >
-                                            <div className="flex items-center gap-4 mb-3">
-                                                <img
-                                                    src={`https://img.youtube.com/vi/${rec.materials.youtube_id}/default.jpg`}
-                                                    alt={rec.materials.title}
-                                                    className="w-16 h-12 object-cover rounded"
-                                                />
+                                            <div className="flex items-start gap-4 mb-3">
+                                                <Link href={`/practice/${rec.materials.id}`} className="shrink-0">
+                                                    <img
+                                                        src={`https://img.youtube.com/vi/${rec.materials.youtube_id}/mqdefault.jpg`}
+                                                        alt={rec.materials.title}
+                                                        className="w-24 h-18 object-cover rounded hover:opacity-80 transition"
+                                                    />
+                                                </Link>
                                                 <div className="flex-1 min-w-0">
-                                                    <h3 className="font-bold text-gray-800 truncate">
+                                                    <Link
+                                                        href={`/practice/${rec.materials.id}`}
+                                                        className="font-bold text-gray-800 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 line-clamp-2 leading-tight block mb-2"
+                                                    >
                                                         {rec.materials.title}
-                                                    </h3>
-                                                    <p className="text-xs text-gray-500">
+                                                    </Link>
+                                                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                                                        {rec.materials.wpm && (
+                                                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                                                                {rec.materials.wpm} WPM
+                                                            </span>
+                                                        )}
+                                                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                            {Math.floor((rec.materials.end_time - rec.materials.start_time))}秒
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                                                        <svg className="w-4 h-4 inline-block mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                        </svg>
                                                         {new Date(rec.created_at).toLocaleString("ja-JP")}
                                                     </p>
                                                 </div>
                                             </div>
 
                                             {rec.signedUrl && (
-                                                <audio
-                                                    controls
-                                                    src={rec.signedUrl}
-                                                    className="w-full h-10"
-                                                />
+                                                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                                                    <audio
+                                                        controls
+                                                        src={rec.signedUrl}
+                                                        className="w-full h-10"
+                                                    />
+                                                </div>
                                             )}
                                         </div>
                                     ))}

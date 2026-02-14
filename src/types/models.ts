@@ -1,5 +1,3 @@
-export type Difficulty = "beginner" | "intermediate" | "advanced";
-
 export type TranscriptItem = {
   text: string;
   offset: number;
@@ -15,7 +13,6 @@ export type Material = {
   end_time: number;
   transcript: TranscriptItem[];
   transcript_ja: TranscriptItem[] | null;
-  difficulty: Difficulty | null;
   wpm: number | null;
   favorite_count: number;
   created_at: string;
@@ -27,7 +24,6 @@ export type MaterialRequest = {
   youtube_url: string;
   youtube_id: string;
   title: string | null;
-  difficulty: Difficulty | null;
   start_time: number;
   end_time: number | null;
   status: "pending" | "approved" | "rejected";
@@ -39,13 +35,6 @@ export type UserFavorite = {
   user_id: string;
   material_id: string;
   created_at: string;
-};
-
-export type PracticeHistory = {
-  id: string;
-  user_id: string;
-  material_id: string;
-  practiced_at: string;
 };
 
 export type PracticeRecording = {

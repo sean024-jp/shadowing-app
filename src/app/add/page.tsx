@@ -5,13 +5,6 @@ import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { extractVideoId, fetchYouTubeTitle } from "@/lib/youtube";
-import type { Difficulty } from "@/types/models";
-
-const DIFFICULTY_OPTIONS: { value: Difficulty; label: string }[] = [
-  { value: "beginner", label: "初級" },
-  { value: "intermediate", label: "中級" },
-  { value: "advanced", label: "上級" },
-];
 
 declare global {
   interface Window {
@@ -24,7 +17,6 @@ export default function RequestPage() {
   const { user } = useAuth();
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
-  const [difficulty, setDifficulty] = useState<Difficulty>("beginner");
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(60);
   const [loading, setLoading] = useState(false);
@@ -129,7 +121,6 @@ export default function RequestPage() {
         youtube_url: url,
         youtube_id: videoId,
         title: title || null,
-        difficulty,
         start_time: startTime,
         end_time: endTime,
       });
@@ -143,7 +134,6 @@ export default function RequestPage() {
     setSuccess(true);
     setUrl("");
     setTitle("");
-    setDifficulty("beginner");
     setStartTime(0);
     setEndTime(60);
     setLoading(false);
@@ -282,30 +272,6 @@ export default function RequestPage() {
                 color: "var(--foreground)",
               }}
             />
-          </div>
-
-          {/* Difficulty */}
-          <div>
-            <label className="block mb-1.5 font-medium text-sm">難易度</label>
-            <div className="flex gap-2">
-              {DIFFICULTY_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setDifficulty(opt.value)}
-                  className={`flex-1 px-3 py-2 rounded-lg transition text-sm ${difficulty === opt.value
-                    ? "bg-blue-600 text-white"
-                    : ""
-                    }`}
-                  style={
-                    difficulty !== opt.value
-                      ? { background: "var(--input-bg)", border: "1px solid var(--input-border)" }
-                      : undefined
-                  }
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Fine-tune Sliders (collapsible feel) */}

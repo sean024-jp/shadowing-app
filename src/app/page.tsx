@@ -2,10 +2,12 @@
 
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import Link from "next/link";
 import { MaterialCard } from "@/components/MaterialCard";
 import { UserStats } from "@/types/models";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { PAGE_SIZES } from "@/lib/constants";
 
 type MaterialListItem = {
   id: string;
@@ -22,23 +24,21 @@ type MaterialListItem = {
 const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
 
 type WPMFilter = "all" | "slow" | "normal" | "fast";
-const WPM_FILTERS: { value: WPMFilter; label: string; range: (wpm: number) => boolean }[] = [
-  { value: "all", label: "すべて", range: () => true },
-  { value: "slow", label: "~100 ゆっくり", range: (wpm) => wpm < 100 },
-  { value: "normal", label: "100~140 ふつう", range: (wpm) => wpm >= 100 && wpm < 140 },
-  { value: "fast", label: "140~ はやい", range: (wpm) => wpm >= 140 },
+const WPM_FILTERS: { value: WPMFilter; label: string }[] = [
+  { value: "all", label: "すべて" },
+  { value: "slow", label: "~100 ゆっくり" },
+  { value: "normal", label: "100~140 ふつう" },
+  { value: "fast", label: "140~ はやい" },
 ];
+
+type SortOption = "popular" | "newest" | "wpm_asc" | "wpm_desc";
 
 export default function Home() {
   const { user, loading, signInWithGoogle, signOut } = useAuth();
-  const [materials, setMaterials] = useState<MaterialListItem[]>([]);
-  const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [wpmFilter, setWpmFilter] = useState<WPMFilter>("all");
   const [showTutorialBanner, setShowTutorialBanner] = useState(false);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
-
-  type SortOption = "popular" | "newest" | "wpm_asc" | "wpm_desc";
   const [sortOption, setSortOption] = useState<SortOption>("popular");
   const [lastPracticed, setLastPracticed] = useState<MaterialListItem | null>(null);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
@@ -46,9 +46,69 @@ export default function Home() {
 
   const isAdmin = Boolean(user?.email && ADMIN_EMAIL && user.email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim());
 
+  const fetchMaterialsPage = useCallback(async (page: number, pageSize: number) => {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+
+    let query = supabase
+      .from("materials")
+      .select("id, title, youtube_id, start_time, end_time, wpm, description, favorite_count, created_at", { count: "exact" });
+
+    if (wpmFilter === "slow") {
+      query = query.lt("wpm", 100);
+    } else if (wpmFilter === "normal") {
+      query = query.gte("wpm", 100).lt("wpm", 140);
+    } else if (wpmFilter === "fast") {
+      query = query.gte("wpm", 140);
+    }
+
+    switch (sortOption) {
+      case "popular":
+        query = query.order("favorite_count", { ascending: false }).order("created_at", { ascending: false });
+        break;
+      case "newest":
+        query = query.order("created_at", { ascending: false });
+        break;
+      case "wpm_asc":
+        query = query.order("wpm", { ascending: true, nullsFirst: false });
+        break;
+      case "wpm_desc":
+        query = query.order("wpm", { ascending: false, nullsFirst: false });
+        break;
+    }
+
+    query = query.range(from, to);
+
+    const { data, count } = await query;
+    const items = (data || []) as MaterialListItem[];
+    const total = count || 0;
+    return { data: items, hasMore: from + items.length < total };
+  }, [wpmFilter, sortOption]);
+
+  const {
+    items: materials,
+    setItems: setMaterials,
+    isLoading: loadingMaterials,
+    isLoadingMore,
+    hasMore,
+    sentinelRef,
+    reset: resetMaterials,
+  } = useInfiniteScroll(fetchMaterialsPage, {
+    pageSize: PAGE_SIZES.HOME_GRID,
+    enabled: !!user,
+  });
+
+  // Reset materials when filter/sort changes
+  const prevFilterRef = useRef({ wpmFilter, sortOption });
+  useEffect(() => {
+    if (prevFilterRef.current.wpmFilter !== wpmFilter || prevFilterRef.current.sortOption !== sortOption) {
+      prevFilterRef.current = { wpmFilter, sortOption };
+      resetMaterials();
+    }
+  }, [wpmFilter, sortOption, resetMaterials]);
+
   useEffect(() => {
     if (user) {
-      loadMaterials();
       loadFavorites();
       loadLastPracticed();
       loadUserStats();
@@ -69,17 +129,6 @@ export default function Home() {
       localStorage.setItem(`tutorial_dismissed_${user.id}`, "1");
     }
     setShowTutorialBanner(false);
-  };
-
-  const loadMaterials = async () => {
-    setLoadingMaterials(true);
-    const { data } = await supabase
-      .from("materials")
-      .select("id, title, youtube_id, start_time, end_time, wpm, description, favorite_count, created_at")
-      .order("favorite_count", { ascending: false })
-      .order("created_at", { ascending: false });
-    setMaterials(data || []);
-    setLoadingMaterials(false);
   };
 
   const loadFavorites = async () => {
@@ -173,7 +222,6 @@ export default function Home() {
         .eq("user_id", user.id)
         .eq("material_id", materialId);
     } else {
-      // Enforce 50 favorites limit (Optional: Logic preserved but maybe simpler to just alert if fail? Keeping silent enforcement for now)
       if (favoriteIds.size >= 50) {
         const { data: oldest } = await supabase
           .from("user_favorites")
@@ -194,25 +242,8 @@ export default function Home() {
   const deleteMaterial = async (id: string) => {
     if (!confirm("この教材を削除しますか？")) return;
     await supabase.from("materials").delete().eq("id", id);
-    loadMaterials();
+    resetMaterials();
   };
-
-  const sortedMaterials = useMemo(() => {
-    const filtered = materials.filter((m) => {
-      const cfg = WPM_FILTERS.find((f) => f.value === wpmFilter);
-      return !cfg || cfg.value === "all" || (m.wpm !== null && cfg.range(m.wpm));
-    });
-    switch (sortOption) {
-      case "popular":
-        return [...filtered].sort((a, b) => b.favorite_count - a.favorite_count || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      case "newest":
-        return [...filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      case "wpm_asc":
-        return [...filtered].sort((a, b) => (a.wpm ?? 999) - (b.wpm ?? 999));
-      case "wpm_desc":
-        return [...filtered].sort((a, b) => (b.wpm ?? 0) - (a.wpm ?? 0));
-    }
-  }, [materials, wpmFilter, sortOption]);
 
   if (loading) {
     return (
@@ -432,18 +463,26 @@ export default function Home() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-          {sortedMaterials.map((material) => (
-            <MaterialCard
-              key={material.id}
-              material={material}
-              isFavorite={favoriteIds.has(material.id)}
-              onToggleFavorite={toggleFavorite}
-              isAdmin={isAdmin}
-              onDelete={deleteMaterial}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+            {materials.map((material) => (
+              <MaterialCard
+                key={material.id}
+                material={material}
+                isFavorite={favoriteIds.has(material.id)}
+                onToggleFavorite={toggleFavorite}
+                isAdmin={isAdmin}
+                onDelete={deleteMaterial}
+              />
+            ))}
+          </div>
+          {isLoadingMore && (
+            <div className="flex justify-center py-6">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+            </div>
+          )}
+          {hasMore && <div ref={sentinelRef} className="h-1" />}
+        </>
       )}
       <Link
         href="/add"

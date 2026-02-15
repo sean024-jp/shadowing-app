@@ -2,80 +2,94 @@
 
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { Material, MaterialRequest, PracticeRecording } from "@/types/models";
 import { MaterialCard } from "@/components/MaterialCard";
+import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { PAGE_SIZES } from "@/lib/constants";
 
 type Tab = "favorites" | "requests" | "recordings";
 
 export default function MyPage() {
     const { user, signOut } = useAuth();
     const [activeTab, setActiveTab] = useState<Tab>("favorites");
-    const [loading, setLoading] = useState(true);
 
-    // Data states
-    const [favorites, setFavorites] = useState<Material[]>([]);
-    const [requests, setRequests] = useState<MaterialRequest[]>([]);
-    const [recordings, setRecordings] = useState<(PracticeRecording & { materials: Material; signedUrl?: string })[]>([]);
+    // Favorites infinite scroll
+    const fetchFavoritesPage = useCallback(async (page: number, pageSize: number) => {
+        if (!user) return { data: [] as Material[], hasMore: false };
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
 
-    useEffect(() => {
-        if (user) {
-            loadData();
-        }
-    }, [user, activeTab]);
+        const { data, count } = await supabase
+            .from("user_favorites")
+            .select("material_id, materials(*)", { count: "exact" })
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .range(from, to);
 
-    const loadData = async () => {
-        setLoading(true);
-        if (!user) return;
+        const mats = (data || []).map((d: any) => d.materials).filter(Boolean) as Material[];
+        const total = count || 0;
+        return { data: mats, hasMore: from + (data?.length || 0) < total };
+    }, [user]);
 
-        try {
-            if (activeTab === "favorites") {
-                const { data } = await supabase
-                    .from("user_favorites")
-                    .select("material_id, materials(*)")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false });
+    const favScroll = useInfiniteScroll(fetchFavoritesPage, {
+        pageSize: PAGE_SIZES.HOME_GRID,
+        enabled: !!user && activeTab === "favorites",
+    });
 
-                if (data) {
-                    // Flatten the structure
-                    const mats = data.map((d: any) => d.materials).filter(Boolean);
-                    setFavorites(mats);
-                }
-            } else if (activeTab === "requests") {
-                const { data } = await supabase
-                    .from("material_requests")
-                    .select("*")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false });
+    // Recordings infinite scroll
+    const fetchRecordingsPage = useCallback(async (page: number, pageSize: number) => {
+        if (!user) return { data: [] as (PracticeRecording & { materials: Material; signedUrl?: string })[], hasMore: false };
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
 
-                if (data) setRequests(data as any);
-            } else if (activeTab === "recordings") {
-                const { data } = await supabase
-                    .from("practice_recordings")
-                    .select("*, materials(*)")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false });
+        const { data, count } = await supabase
+            .from("practice_recordings")
+            .select("*, materials(*)", { count: "exact" })
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .range(from, to);
 
-                if (data) {
-                    // Generate signed URLs for audio
-                    const recordingsWithUrl = await Promise.all(
-                        data.map(async (rec: any) => {
-                            const { data: signedData } = await supabase.storage
-                                .from("practice-recordings")
-                                .createSignedUrl(rec.audio_path, 3600);
-                            return { ...rec, signedUrl: signedData?.signedUrl };
-                        })
-                    );
-                    setRecordings(recordingsWithUrl);
-                }
-            }
-        } catch (error) {
-            console.error("Error loading data:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
+        const recordingsWithUrl = await Promise.all(
+            (data || []).map(async (rec: any) => {
+                const { data: signedData } = await supabase.storage
+                    .from("practice-recordings")
+                    .createSignedUrl(rec.audio_path, 3600);
+                return { ...rec, signedUrl: signedData?.signedUrl };
+            })
+        );
+
+        const total = count || 0;
+        return { data: recordingsWithUrl, hasMore: from + (data?.length || 0) < total };
+    }, [user]);
+
+    const recScroll = useInfiniteScroll(fetchRecordingsPage, {
+        pageSize: PAGE_SIZES.LIST,
+        enabled: !!user && activeTab === "recordings",
+    });
+
+    // Requests infinite scroll
+    const fetchRequestsPage = useCallback(async (page: number, pageSize: number) => {
+        if (!user) return { data: [] as MaterialRequest[], hasMore: false };
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+
+        const { data, count } = await supabase
+            .from("material_requests")
+            .select("*", { count: "exact" })
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .range(from, to);
+
+        const total = count || 0;
+        return { data: (data || []) as MaterialRequest[], hasMore: from + (data?.length || 0) < total };
+    }, [user]);
+
+    const reqScroll = useInfiniteScroll(fetchRequestsPage, {
+        pageSize: PAGE_SIZES.LIST,
+        enabled: !!user && activeTab === "requests",
+    });
 
     const removeFavorite = async (materialId: string) => {
         if (!user || !confirm("お気に入りから削除しますか？")) return;
@@ -86,7 +100,7 @@ export default function MyPage() {
             .eq("user_id", user.id)
             .eq("material_id", materialId);
 
-        loadData(); // Reload
+        favScroll.reset();
     };
 
     if (!user) {
@@ -104,6 +118,17 @@ export default function MyPage() {
         { id: "recordings", label: "録音履歴" },
         { id: "requests", label: "リクエスト" },
     ];
+
+    const renderLoadingMore = (scroll: { isLoadingMore: boolean; hasMore: boolean; sentinelRef: (node: HTMLDivElement | null) => void }) => (
+        <>
+            {scroll.isLoadingMore && (
+                <div className="flex justify-center py-6">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                </div>
+            )}
+            {scroll.hasMore && <div ref={scroll.sentinelRef} className="h-1" />}
+        </>
+    );
 
     return (
         <div className="max-w-4xl mx-auto p-6">
@@ -148,20 +173,20 @@ export default function MyPage() {
             </div>
 
             {/* Content */}
-            {loading ? (
-                <div className="text-center py-12">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    {/* Favorites Tab */}
-                    {activeTab === "favorites" && (
-                        <>
-                            {favorites.length === 0 ? (
-                                <p className="text-center text-gray-500 py-8">お気に入りの教材はありません</p>
-                            ) : (
+            <div className="space-y-4">
+                {/* Favorites Tab */}
+                {activeTab === "favorites" && (
+                    <>
+                        {favScroll.isLoading ? (
+                            <div className="text-center py-12">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                            </div>
+                        ) : favScroll.items.length === 0 ? (
+                            <p className="text-center text-gray-500 py-8">お気に入りの教材はありません</p>
+                        ) : (
+                            <>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {favorites.map((material) => (
+                                    {favScroll.items.map((material) => (
                                         <MaterialCard
                                             key={material.id}
                                             material={material}
@@ -170,18 +195,25 @@ export default function MyPage() {
                                         />
                                     ))}
                                 </div>
-                            )}
-                        </>
-                    )}
+                                {renderLoadingMore(favScroll)}
+                            </>
+                        )}
+                    </>
+                )}
 
-                    {/* Requests Tab */}
-                    {activeTab === "requests" && (
-                        <>
-                            {requests.length === 0 ? (
-                                <p className="text-center text-gray-500 py-8">リクエスト履歴はありません</p>
-                            ) : (
+                {/* Requests Tab */}
+                {activeTab === "requests" && (
+                    <>
+                        {reqScroll.isLoading ? (
+                            <div className="text-center py-12">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                            </div>
+                        ) : reqScroll.items.length === 0 ? (
+                            <p className="text-center text-gray-500 py-8">リクエスト履歴はありません</p>
+                        ) : (
+                            <>
                                 <div className="grid gap-4">
-                                    {requests.map((req) => (
+                                    {reqScroll.items.map((req) => (
                                         <div
                                             key={req.id}
                                             className="rounded-lg p-4"
@@ -220,18 +252,25 @@ export default function MyPage() {
                                         </div>
                                     ))}
                                 </div>
-                            )}
-                        </>
-                    )}
+                                {renderLoadingMore(reqScroll)}
+                            </>
+                        )}
+                    </>
+                )}
 
-                    {/* Recordings Tab */}
-                    {activeTab === "recordings" && (
-                        <>
-                            {recordings.length === 0 ? (
-                                <p className="text-center text-gray-500 py-8">録音履歴はありません</p>
-                            ) : (
+                {/* Recordings Tab */}
+                {activeTab === "recordings" && (
+                    <>
+                        {recScroll.isLoading ? (
+                            <div className="text-center py-12">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                            </div>
+                        ) : recScroll.items.length === 0 ? (
+                            <p className="text-center text-gray-500 py-8">録音履歴はありません</p>
+                        ) : (
+                            <>
                                 <div className="grid gap-4">
-                                    {recordings.map((rec) => (
+                                    {recScroll.items.map((rec) => (
                                         <div
                                             key={rec.id}
                                             className="rounded-lg p-4 hover:shadow-md transition"
@@ -283,11 +322,12 @@ export default function MyPage() {
                                         </div>
                                     ))}
                                 </div>
-                            )}
-                        </>
-                    )}
-                </div>
-            )}
+                                {renderLoadingMore(recScroll)}
+                            </>
+                        )}
+                    </>
+                )}
+            </div>
         </div>
     );
 }

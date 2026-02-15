@@ -6,6 +6,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import type { Material, TranscriptItem } from "@/types/models";
 import { calculateWPM, getWPMLabel } from "@/lib/wpm";
+import { Pagination } from "@/components/Pagination";
+import { PAGE_SIZES } from "@/lib/constants";
 
 type MaterialRequest = {
   id: string;
@@ -35,6 +37,14 @@ export default function AdminPage() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [materialsLoading, setMaterialsLoading] = useState(true);
 
+  // Pagination state
+  const [requestsPage, setRequestsPage] = useState(0);
+  const [requestsTotalPages, setRequestsTotalPages] = useState(0);
+  const [requestsTotalCount, setRequestsTotalCount] = useState(0);
+  const [materialsPage, setMaterialsPage] = useState(0);
+  const [materialsTotalPages, setMaterialsTotalPages] = useState(0);
+  const [materialsTotalCount, setMaterialsTotalCount] = useState(0);
+
   // Approval form state
   const [editingRequest, setEditingRequest] = useState<MaterialRequest | null>(null);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
@@ -58,22 +68,42 @@ export default function AdminPage() {
     }
   }, [isAdmin]);
 
-  const loadRequests = async () => {
-    const { data } = await supabase
+  const loadRequests = async (page = 0) => {
+    setLoading(true);
+    const from = page * PAGE_SIZES.ADMIN;
+    const to = from + PAGE_SIZES.ADMIN - 1;
+
+    const { data, count } = await supabase
       .from("material_requests")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("status", "pending")
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .range(from, to);
+
     setRequests(data || []);
+    const total = count || 0;
+    setRequestsTotalCount(total);
+    setRequestsPage(page);
+    setRequestsTotalPages(Math.ceil(total / PAGE_SIZES.ADMIN));
     setLoading(false);
   };
 
-  const loadMaterials = async () => {
-    const { data } = await supabase
+  const loadMaterials = async (page = 0) => {
+    setMaterialsLoading(true);
+    const from = page * PAGE_SIZES.ADMIN;
+    const to = from + PAGE_SIZES.ADMIN - 1;
+
+    const { data, count } = await supabase
       .from("materials")
-      .select("*")
-      .order("created_at", { ascending: false });
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
     setMaterials(data || []);
+    const total = count || 0;
+    setMaterialsTotalCount(total);
+    setMaterialsPage(page);
+    setMaterialsTotalPages(Math.ceil(total / PAGE_SIZES.ADMIN));
     setMaterialsLoading(false);
   };
 
@@ -193,7 +223,7 @@ export default function AdminPage() {
     setStartTime(0);
     setEndTime(60);
     setProcessingId(null);
-    loadRequests();
+    loadRequests(requestsPage);
   };
 
   const reject = async (id: string) => {
@@ -204,7 +234,12 @@ export default function AdminPage() {
       .update({ status: "rejected" })
       .eq("id", id);
 
-    loadRequests();
+    // If last item on current page, go to previous page
+    if (requests.length === 1 && requestsPage > 0) {
+      loadRequests(requestsPage - 1);
+    } else {
+      loadRequests(requestsPage);
+    }
   };
 
   const fetchTranscriptForEdit = async (material: Material) => {
@@ -275,7 +310,7 @@ export default function AdminPage() {
     setSuccess(`「${title}」を更新しました`);
     cancelEditing();
     setProcessingId(null);
-    loadMaterials();
+    loadMaterials(materialsPage);
   };
 
   const deleteMaterial = async (mat: Material) => {
@@ -286,7 +321,12 @@ export default function AdminPage() {
       return;
     }
     setSuccess(`「${mat.title}」を削除しました`);
-    loadMaterials();
+    // If last item on current page, go to previous page
+    if (materials.length === 1 && materialsPage > 0) {
+      loadMaterials(materialsPage - 1);
+    } else {
+      loadMaterials(materialsPage);
+    }
   };
 
   const cancelEditing = () => {
@@ -332,7 +372,7 @@ export default function AdminPage() {
     setBatchGenerating(false);
     setBatchProgress("");
     setSuccess(`${done}件の教材に概要を生成しました`);
-    loadMaterials();
+    loadMaterials(materialsPage);
   };
 
   const formatTime = (seconds: number) => {
@@ -391,7 +431,7 @@ export default function AdminPage() {
               : "opacity-60 hover:opacity-100"
           }`}
         >
-          リクエスト{requests.length > 0 && ` (${requests.length})`}
+          リクエスト{requestsTotalCount > 0 && ` (${requestsTotalCount})`}
         </button>
         <button
           onClick={() => { setActiveTab("materials"); cancelEditing(); }}
@@ -401,7 +441,7 @@ export default function AdminPage() {
               : "opacity-60 hover:opacity-100"
           }`}
         >
-          教材一覧{materials.length > 0 && ` (${materials.length})`}
+          教材一覧{materialsTotalCount > 0 && ` (${materialsTotalCount})`}
         </button>
       </div>
 
@@ -634,6 +674,7 @@ export default function AdminPage() {
               <p className="opacity-60">保留中のリクエストはありません</p>
             </div>
           ) : (
+            <>
             <div className="grid gap-3 md:gap-4">
               {requests.map((req) => (
                 <div
@@ -678,6 +719,13 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+            <Pagination
+              currentPage={requestsPage}
+              totalPages={requestsTotalPages}
+              onPageChange={loadRequests}
+              isLoading={loading}
+            />
+            </>
           )}
         </>
       )}
@@ -755,6 +803,12 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+            <Pagination
+              currentPage={materialsPage}
+              totalPages={materialsTotalPages}
+              onPageChange={loadMaterials}
+              isLoading={materialsLoading}
+            />
             </>
           )}
         </>

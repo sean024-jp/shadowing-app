@@ -61,7 +61,7 @@ export function MaterialCard({
                 </div>
 
                 {material.description && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2 leading-relaxed">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 leading-relaxed">
                         {material.description}
                     </p>
                 )}

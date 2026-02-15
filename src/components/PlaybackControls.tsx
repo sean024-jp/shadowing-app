@@ -172,7 +172,7 @@ export function PlaybackControls({
         </div>
       ) : !playerUnlocked ? (
         /* Pre-unlock: Guide user to tap video first */
-        <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-3 shadow-sm">
+        <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-2 h-14 shadow-sm">
           <span className="text-sm font-bold text-blue-600 dark:text-blue-400 flex-1 text-center">
             {practiceMode === "recording"
               ? "▶ 動画をタップしてから録音開始"
@@ -191,7 +191,7 @@ export function PlaybackControls({
         </div>
       ) : (
         /* Standard Controls (Practice or Idle/Recording) — player unlocked */
-        <div className={`flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-2 shadow-sm transition-all duration-300 ${practiceMode === 'recording' && recordingState === 'recording' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}>
+        <div className={`flex items-center justify-between bg-gray-100 dark:bg-gray-800 rounded-full px-4 py-2 h-14 shadow-sm transition-all duration-300 ${practiceMode === 'recording' && recordingState === 'recording' ? 'ring-2 ring-red-500 animate-pulse' : ''}`}>
 
           {/* Left: Playback Controls */}
           <div className="flex items-center gap-4">

@@ -14,6 +14,7 @@ export type Material = {
   transcript: TranscriptItem[];
   transcript_ja: TranscriptItem[] | null;
   wpm: number | null;
+  description: string | null;
   favorite_count: number;
   created_at: string;
 };
@@ -43,5 +44,15 @@ export type PracticeRecording = {
   material_id: string;
   audio_path: string;
   duration_seconds: number | null;
+  created_at: string;
+};
+
+export type UserStats = {
+  id: string;
+  user_id: string;
+  current_streak: number;
+  longest_streak: number;
+  last_practice_date: string | null;
+  total_recordings: number;
   created_at: string;
 };

@@ -2,9 +2,10 @@
 
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import { MaterialCard } from "@/components/MaterialCard";
+import { UserStats } from "@/types/models";
 
 type MaterialListItem = {
   id: string;
@@ -13,6 +14,7 @@ type MaterialListItem = {
   start_time: number;
   end_time: number;
   wpm: number | null;
+  description: string | null;
   favorite_count: number;
   created_at: string;
 };
@@ -33,6 +35,14 @@ export default function Home() {
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [wpmFilter, setWpmFilter] = useState<WPMFilter>("all");
+  const [showTutorialBanner, setShowTutorialBanner] = useState(false);
+  const [showTutorialModal, setShowTutorialModal] = useState(false);
+
+  type SortOption = "popular" | "newest" | "wpm_asc" | "wpm_desc";
+  const [sortOption, setSortOption] = useState<SortOption>("popular");
+  const [lastPracticed, setLastPracticed] = useState<MaterialListItem | null>(null);
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const wpmDefaultSetRef = useRef(false);
 
   const isAdmin = Boolean(user?.email && ADMIN_EMAIL && user.email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim());
 
@@ -40,14 +50,32 @@ export default function Home() {
     if (user) {
       loadMaterials();
       loadFavorites();
+      loadLastPracticed();
+      loadUserStats();
+      loadWpmDefault();
+      const admin = Boolean(user.email && ADMIN_EMAIL && user.email.toLowerCase().trim() === ADMIN_EMAIL!.toLowerCase().trim());
+      if (admin) {
+        setShowTutorialBanner(true);
+      } else {
+        const dismissed = localStorage.getItem(`tutorial_dismissed_${user.id}`);
+        if (!dismissed) setShowTutorialBanner(true);
+      }
     }
   }, [user]);
+
+  const dismissTutorial = () => {
+    if (!user) return;
+    if (!isAdmin) {
+      localStorage.setItem(`tutorial_dismissed_${user.id}`, "1");
+    }
+    setShowTutorialBanner(false);
+  };
 
   const loadMaterials = async () => {
     setLoadingMaterials(true);
     const { data } = await supabase
       .from("materials")
-      .select("id, title, youtube_id, start_time, end_time, wpm, favorite_count, created_at")
+      .select("id, title, youtube_id, start_time, end_time, wpm, description, favorite_count, created_at")
       .order("favorite_count", { ascending: false })
       .order("created_at", { ascending: false });
     setMaterials(data || []);
@@ -61,6 +89,59 @@ export default function Home() {
       .select("material_id")
       .eq("user_id", user.id);
     setFavoriteIds(new Set((data || []).map((f) => f.material_id)));
+  };
+
+  const loadLastPracticed = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("practice_recordings")
+      .select("material_id, materials(id, title, youtube_id, start_time, end_time, wpm, favorite_count, created_at)")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data?.materials) {
+      setLastPracticed(data.materials as any);
+    }
+  };
+
+  const loadUserStats = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("user_stats")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (data) {
+      const today = new Date().toLocaleDateString("sv-SE");
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toLocaleDateString("sv-SE");
+      if (data.last_practice_date !== today && data.last_practice_date !== yesterdayStr) {
+        data.current_streak = 0;
+      }
+      setUserStats(data);
+    }
+  };
+
+  const loadWpmDefault = async () => {
+    if (!user || wpmDefaultSetRef.current) return;
+    wpmDefaultSetRef.current = true;
+    const { data } = await supabase
+      .from("practice_recordings")
+      .select("materials(wpm)")
+      .eq("user_id", user.id);
+    if (data && data.length >= 3) {
+      const wpms = data
+        .map((d: any) => d.materials?.wpm)
+        .filter((w: any): w is number => w != null);
+      if (wpms.length >= 3) {
+        const avg = wpms.reduce((a: number, b: number) => a + b, 0) / wpms.length;
+        if (avg < 100) setWpmFilter("slow");
+        else if (avg < 140) setWpmFilter("normal");
+        else setWpmFilter("fast");
+      }
+    }
   };
 
   const toggleFavorite = async (materialId: string) => {
@@ -115,6 +196,23 @@ export default function Home() {
     await supabase.from("materials").delete().eq("id", id);
     loadMaterials();
   };
+
+  const sortedMaterials = useMemo(() => {
+    const filtered = materials.filter((m) => {
+      const cfg = WPM_FILTERS.find((f) => f.value === wpmFilter);
+      return !cfg || cfg.value === "all" || (m.wpm !== null && cfg.range(m.wpm));
+    });
+    switch (sortOption) {
+      case "popular":
+        return [...filtered].sort((a, b) => b.favorite_count - a.favorite_count || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      case "newest":
+        return [...filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      case "wpm_asc":
+        return [...filtered].sort((a, b) => (a.wpm ?? 999) - (b.wpm ?? 999));
+      case "wpm_desc":
+        return [...filtered].sort((a, b) => (b.wpm ?? 0) - (a.wpm ?? 0));
+    }
+  }, [materials, wpmFilter, sortOption]);
 
   if (loading) {
     return (
@@ -193,20 +291,130 @@ export default function Home() {
       </header>
 
 
-      {/* WPM Filter */}
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {WPM_FILTERS.map((f) => (
+      {/* Tutorial Banner */}
+      {showTutorialBanner && (
+        <div className="mb-4 relative rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-md">
           <button
-            key={f.value}
-            onClick={() => setWpmFilter(f.value)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${wpmFilter === f.value
-                ? "bg-purple-600 text-white"
-                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
-              }`}
+            onClick={() => setShowTutorialModal(true)}
+            className="w-full flex items-center gap-3 px-4 py-3 text-left"
           >
-            {f.label}
+            <span className="text-2xl shrink-0">▶</span>
+            <div className="min-w-0">
+              <p className="font-bold text-sm md:text-base">シャドーイングのはじめかた</p>
+              <p className="text-xs opacity-80">タップして動画を見る</p>
+            </div>
           </button>
-        ))}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              dismissTutorial();
+            }}
+            className="absolute top-1 right-1 w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/20 transition text-white/80 hover:text-white"
+            title="閉じる"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Tutorial Modal */}
+      {showTutorialModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setShowTutorialModal(false)}
+        >
+          <div
+            className="relative w-full max-w-2xl rounded-xl overflow-hidden bg-black shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowTutorialModal(false)}
+              className="absolute top-2 right-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 transition text-white"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <div className="aspect-video">
+              <iframe
+                src="https://www.youtube.com/embed/6aTgL0bXIVo?autoplay=1&rel=0"
+                className="w-full h-full"
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Streak */}
+      {userStats && userStats.current_streak > 0 && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg px-4 py-3 bg-gradient-to-r from-orange-50 to-yellow-50 dark:from-orange-900/20 dark:to-yellow-900/20 border border-orange-200 dark:border-orange-800">
+          <span className="text-3xl">&#x1f525;</span>
+          <div>
+            <p className="font-bold text-orange-700 dark:text-orange-300">
+              {userStats.current_streak}日連続練習中
+            </p>
+            <p className="text-xs text-orange-600/70 dark:text-orange-400/70">
+              練習を続けよう！
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Continue Learning */}
+      {lastPracticed && (
+        <div className="mb-4 rounded-lg overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="flex items-center gap-3 p-3">
+            <Link href={`/practice/${lastPracticed.id}`} className="shrink-0">
+              <img
+                src={`https://img.youtube.com/vi/${lastPracticed.youtube_id}/mqdefault.jpg`}
+                alt={lastPracticed.title}
+                className="w-20 h-14 object-cover rounded hover:opacity-80 transition"
+              />
+            </Link>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">前回の練習</p>
+              <p className="font-bold text-sm line-clamp-1">{lastPracticed.title}</p>
+            </div>
+            <Link
+              href={`/practice/${lastPracticed.id}`}
+              className="bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-full hover:bg-blue-700 transition shrink-0"
+            >
+              続ける
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* WPM Filter + Sort */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
+          {WPM_FILTERS.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setWpmFilter(f.value)}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${wpmFilter === f.value
+                  ? "bg-purple-600 text-white"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={sortOption}
+          onChange={(e) => setSortOption(e.target.value as SortOption)}
+          className="text-sm rounded-lg px-3 py-1.5 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 shrink-0"
+        >
+          <option value="popular">人気順</option>
+          <option value="newest">新しい順</option>
+          <option value="wpm_asc">WPM低い順</option>
+          <option value="wpm_desc">WPM高い順</option>
+        </select>
       </div>
 
       {loadingMaterials ? (
@@ -225,21 +433,16 @@ export default function Home() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
-          {materials
-            .filter((m) => {
-              const wpmFilterConfig = WPM_FILTERS.find((f) => f.value === wpmFilter);
-              return !wpmFilterConfig || wpmFilterConfig.value === "all" || (m.wpm !== null && wpmFilterConfig.range(m.wpm));
-            })
-            .map((material) => (
-              <MaterialCard
-                key={material.id}
-                material={material}
-                isFavorite={favoriteIds.has(material.id)}
-                onToggleFavorite={toggleFavorite}
-                isAdmin={isAdmin}
-                onDelete={deleteMaterial}
-              />
-            ))}
+          {sortedMaterials.map((material) => (
+            <MaterialCard
+              key={material.id}
+              material={material}
+              isFavorite={favoriteIds.has(material.id)}
+              onToggleFavorite={toggleFavorite}
+              isAdmin={isAdmin}
+              onDelete={deleteMaterial}
+            />
+          ))}
         </div>
       )}
       <Link

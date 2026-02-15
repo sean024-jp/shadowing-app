@@ -10,6 +10,7 @@ type MaterialCardProps = {
         start_time: number;
         end_time: number;
         wpm: number | null;
+        description: string | null;
         favorite_count: number;
         created_at: string;
     };
@@ -41,6 +42,11 @@ export function MaterialCard({
                     alt={material.title}
                     className="w-full h-full object-cover"
                 />
+                {Date.now() - new Date(material.created_at).getTime() < 7 * 24 * 60 * 60 * 1000 && (
+                    <div className="absolute top-1.5 left-1.5 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow">
+                        NEW
+                    </div>
+                )}
                 <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1 rounded">
                     {Math.floor((material.end_time - material.start_time))}s
                 </div>
@@ -53,6 +59,12 @@ export function MaterialCard({
                         {material.title}
                     </Link>
                 </div>
+
+                {material.description && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-2 leading-relaxed">
+                        {material.description}
+                    </p>
+                )}
 
                 <div className="flex items-center gap-2 mb-3">
                     {material.wpm && (

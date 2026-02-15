@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { AudioRecorder } from "@/lib/audio-recorder";
 import { supabase } from "@/lib/supabase";
+import { updateStreak } from "@/lib/streak";
 
 export function useAudioRecorder(userId: string | undefined, materialId: string | undefined, initialAudioPath: string | null) {
     const [isRecording, setIsRecording] = useState(false);
@@ -135,6 +136,7 @@ export function useAudioRecorder(userId: string | undefined, materialId: string 
             }
 
             console.log("Recording saved successfully");
+            updateStreak(userId).catch(console.error);
             setAudioPath(filePath);
             setPlaybackUrl(null);
             setPreviewUrl(null);

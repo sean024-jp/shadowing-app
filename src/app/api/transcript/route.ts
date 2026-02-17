@@ -48,51 +48,85 @@ function parseJson3(content: string): TranscriptItem[] {
   return items;
 }
 
+type FetchResult = {
+  transcripts: Record<string, TranscriptItem[]>;
+  subsType: Record<string, "manual" | "auto">;
+};
+
 async function fetchTranscriptWithYtDlp(
   videoId: string,
   langs: string[] = ["en"]
-): Promise<Record<string, TranscriptItem[]>> {
+): Promise<FetchResult> {
   const tmpDir = os.tmpdir();
   const fileId = randomUUID();
   const outputPath = path.join(tmpDir, `transcript_${fileId}`);
   const langStr = langs.join(",");
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
 
   const result: Record<string, TranscriptItem[]> = {};
+  const subsType: Record<string, "manual" | "auto"> = {};
 
-  const cmd = `yt-dlp --write-auto-sub --sub-lang ${langStr} --sub-format json3 --skip-download -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
-
+  // Phase 1: Try manual (uploaded) subtitles first — they have proper punctuation
+  const manualCmd = `yt-dlp --cookies-from-browser chrome --write-sub --sub-lang ${langStr} --sub-format json3 --skip-download -o "${outputPath}" "${url}"`;
   try {
-    await execAsync(cmd, { timeout: 30000 });
-  } catch {
-    // yt-dlp may exit non-zero if some languages fail (e.g. 429 for ja)
-    // Continue and read whatever files were downloaded successfully
+    await execAsync(manualCmd, { timeout: 30000 });
+  } catch (err: unknown) {
+    const stderr = (err as { stderr?: string }).stderr;
+    if (stderr) console.warn(`[manual] yt-dlp: ${stderr.trim().split("\n").pop()}`);
   }
 
-  try {
-    for (const lang of langs) {
-      const subtitlePath = `${outputPath}.${lang}.json3`;
+  for (const lang of langs) {
+    const subtitlePath = `${outputPath}.${lang}.json3`;
+    try {
+      const content = await readFile(subtitlePath, "utf-8");
+      const items = parseJson3(content);
+      if (items.length > 0) {
+        result[lang] = items;
+        subsType[lang] = "manual";
+      }
+    } catch {
+      // Not available
+    } finally {
+      try { await unlink(subtitlePath); } catch { /* ignore */ }
+    }
+  }
+
+  // Phase 2: Fall back to auto-generated subs for missing languages
+  const missingLangs = langs.filter((l) => !result[l]);
+  if (missingLangs.length > 0) {
+    const autoFileId = randomUUID();
+    const autoOutputPath = path.join(tmpDir, `transcript_${autoFileId}`);
+    const autoCmd = `yt-dlp --cookies-from-browser chrome --write-auto-sub --sub-lang ${missingLangs.join(",")} --sub-format json3 --skip-download -o "${autoOutputPath}" "${url}"`;
+
+    try {
+      await execAsync(autoCmd, { timeout: 30000 });
+    } catch (err: unknown) {
+      const stderr = (err as { stderr?: string }).stderr;
+      if (stderr) console.warn(`[auto] yt-dlp: ${stderr.trim().split("\n").pop()}`);
+    }
+
+    for (const lang of missingLangs) {
+      const subtitlePath = `${autoOutputPath}.${lang}.json3`;
       try {
         const content = await readFile(subtitlePath, "utf-8");
-        result[lang] = parseJson3(content);
+        const items = parseJson3(content);
+        if (items.length > 0) {
+          result[lang] = items;
+          subsType[lang] = "auto";
+        }
       } catch {
-        // Language not available
+        // Not available
       } finally {
         try { await unlink(subtitlePath); } catch { /* ignore */ }
       }
     }
-
-    if (Object.keys(result).length === 0) {
-      throw new Error("字幕を取得できませんでした");
-    }
-
-    return result;
-  } catch (error) {
-    // Clean up any remaining files
-    for (const lang of langs) {
-      try { await unlink(`${outputPath}.${lang}.json3`); } catch { /* ignore */ }
-    }
-    throw error;
   }
+
+  if (Object.keys(result).length === 0) {
+    throw new Error("字幕を取得できませんでした");
+  }
+
+  return { transcripts: result, subsType };
 }
 
 export async function GET(request: Request) {
@@ -112,12 +146,12 @@ export async function GET(request: Request) {
   try {
     if (multiLang) {
       // Return both en and ja transcripts
-      const transcripts = await fetchTranscriptWithYtDlp(videoId, ["en", "ja"]);
-      return NextResponse.json(transcripts);
+      const { transcripts, subsType } = await fetchTranscriptWithYtDlp(videoId, ["en", "ja"]);
+      return NextResponse.json({ ...transcripts, subsType });
     } else {
       // Single language (backward compatible)
-      const transcripts = await fetchTranscriptWithYtDlp(videoId, [lang]);
-      return NextResponse.json(transcripts[lang] || []);
+      const { transcripts, subsType } = await fetchTranscriptWithYtDlp(videoId, [lang]);
+      return NextResponse.json({ transcript: transcripts[lang] || [], subsType });
     }
   } catch (error) {
     console.error("Transcript fetch error:", error);

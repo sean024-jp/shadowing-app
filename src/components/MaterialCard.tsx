@@ -2,6 +2,10 @@
 
 import Link from "next/link";
 
+const CATEGORY_LABELS: Record<string, string> = {
+    business: "ビジネス",
+};
+
 type MaterialCardProps = {
     material: {
         id: string;
@@ -11,6 +15,7 @@ type MaterialCardProps = {
         end_time: number;
         wpm: number | null;
         description: string | null;
+        category?: string;
         favorite_count: number;
         created_at: string;
     };
@@ -28,8 +33,9 @@ export function MaterialCard({
     onDelete,
 }: MaterialCardProps) {
     return (
-        <div
-            className="flex flex-col rounded-lg overflow-hidden transition hover:shadow-lg dark:hover:bg-gray-800 h-full"
+        <Link
+            href={`/practice/${material.id}`}
+            className="flex flex-col rounded-lg overflow-hidden transition hover:shadow-lg dark:hover:bg-gray-800 h-full cursor-pointer"
             style={{
                 background: "var(--card-bg)",
                 border: "1px solid var(--card-border)"
@@ -55,9 +61,9 @@ export function MaterialCard({
             {/* Content Area */}
             <div className="flex flex-col flex-1 p-3">
                 <div className="flex items-start justify-between gap-2 mb-2">
-                    <Link href={`/practice/${material.id}`} className="font-bold text-gray-800 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 line-clamp-2 leading-tight flex-1">
+                    <span className="font-bold text-gray-800 dark:text-gray-100 line-clamp-2 leading-tight flex-1">
                         {material.title}
-                    </Link>
+                    </span>
                 </div>
 
                 {material.description && (
@@ -66,7 +72,12 @@ export function MaterialCard({
                     </p>
                 )}
 
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                    {material.category && (
+                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                            {CATEGORY_LABELS[material.category] || material.category}
+                        </span>
+                    )}
                     {material.wpm && (
                         <span className="text-xs font-bold px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
                             {material.wpm} WPM
@@ -82,6 +93,7 @@ export function MaterialCard({
                     <button
                         onClick={(e) => {
                             e.preventDefault();
+                            e.stopPropagation();
                             onToggleFavorite(material.id);
                         }}
                         className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:opacity-80 transition"
@@ -103,27 +115,20 @@ export function MaterialCard({
                         <span>{material.favorite_count}</span>
                     </button>
 
-                    <div className="flex gap-2">
-                        {isAdmin && onDelete && (
-                            <button
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    onDelete(material.id);
-                                }}
-                                className="text-red-500 hover:text-red-700 text-xs"
-                            >
-                                削除
-                            </button>
-                        )}
-                        <Link
-                            href={`/practice/${material.id}`}
-                            className="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-full hover:bg-blue-700 transition"
+                    {isAdmin && onDelete && (
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onDelete(material.id);
+                            }}
+                            className="text-red-500 hover:text-red-700 text-xs"
                         >
-                            練習
-                        </Link>
-                    </div>
+                            削除
+                        </button>
+                    )}
                 </div>
             </div>
-        </div>
+        </Link>
     );
 }

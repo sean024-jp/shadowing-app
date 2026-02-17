@@ -58,6 +58,7 @@ export default function AdminPage() {
   const [generatingDescription, setGeneratingDescription] = useState(false);
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [batchProgress, setBatchProgress] = useState("");
+  const [punctuating, setPunctuating] = useState(false);
 
   const isAdmin = Boolean(user?.email && ADMIN_EMAIL && user.email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim());
 
@@ -178,6 +179,40 @@ export default function AdminPage() {
       setGeneratingDescription(false);
     }
     return "";
+  };
+
+  const punctuateTranscript = async () => {
+    const selected = getSelectedTranscript(transcript);
+    if (selected.length === 0) return;
+    setPunctuating(true);
+    try {
+      const res = await fetch("/api/punctuate-transcript", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunks: selected.map((t) => t.text) }),
+      });
+      const data = await res.json();
+      if (data.chunks && data.chunks.length === selected.length) {
+        // Update only the selected range within the full transcript
+        const startMs = startTime * 1000;
+        const endMs = endTime * 1000;
+        const updated = transcript.map((item) => {
+          if (item.offset >= startMs && item.offset < endMs) {
+            const idx = selected.indexOf(item);
+            if (idx !== -1 && data.chunks[idx]) {
+              return { ...item, text: data.chunks[idx] };
+            }
+          }
+          return item;
+        });
+        setTranscript(updated);
+        setSuccess("スクリプトを整形しました");
+      }
+    } catch (err) {
+      setError("整形に失敗しました: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setPunctuating(false);
+    }
   };
 
   const approve = async () => {
@@ -587,7 +622,16 @@ export default function AdminPage() {
 
               {/* English transcript preview */}
               <div>
-                <h3 className="font-medium text-sm mb-2">英語スクリプト</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-medium text-sm">英語スクリプト</h3>
+                  <button
+                    onClick={punctuateTranscript}
+                    disabled={punctuating || getSelectedTranscript(transcript).length === 0}
+                    className="text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                  >
+                    {punctuating ? "整形中..." : "AIで整形"}
+                  </button>
+                </div>
                 <div
                   className="rounded-lg p-3 max-h-32 overflow-y-auto text-sm"
                   style={{ background: "var(--background)" }}

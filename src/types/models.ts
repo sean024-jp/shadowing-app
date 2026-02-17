@@ -15,6 +15,7 @@ export type Material = {
   transcript_ja: TranscriptItem[] | null;
   wpm: number | null;
   description: string | null;
+  category: string;
   favorite_count: number;
   created_at: string;
 };

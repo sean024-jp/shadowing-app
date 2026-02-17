@@ -17,6 +17,7 @@ type MaterialListItem = {
   end_time: number;
   wpm: number | null;
   description: string | null;
+  category: string;
   favorite_count: number;
   created_at: string;
 };
@@ -33,10 +34,20 @@ const WPM_FILTERS: { value: WPMFilter; label: string }[] = [
 
 type SortOption = "popular" | "newest" | "wpm_asc" | "wpm_desc";
 
+const CATEGORY_LABELS: Record<string, string> = {
+  business: "ビジネス",
+};
+
+function getCategoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] || category;
+}
+
 export default function Home() {
   const { user, loading, signInWithGoogle, signOut } = useAuth();
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [wpmFilter, setWpmFilter] = useState<WPMFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [categories, setCategories] = useState<string[]>([]);
   const [showTutorialBanner, setShowTutorialBanner] = useState(false);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>("popular");
@@ -52,7 +63,11 @@ export default function Home() {
 
     let query = supabase
       .from("materials")
-      .select("id, title, youtube_id, start_time, end_time, wpm, description, favorite_count, created_at", { count: "exact" });
+      .select("id, title, youtube_id, start_time, end_time, wpm, description, category, favorite_count, created_at", { count: "exact" });
+
+    if (categoryFilter !== "all") {
+      query = query.eq("category", categoryFilter);
+    }
 
     if (wpmFilter === "slow") {
       query = query.lt("wpm", 100);
@@ -83,7 +98,7 @@ export default function Home() {
     const items = (data || []) as MaterialListItem[];
     const total = count || 0;
     return { data: items, hasMore: from + items.length < total };
-  }, [wpmFilter, sortOption]);
+  }, [wpmFilter, sortOption, categoryFilter]);
 
   const {
     items: materials,
@@ -99,13 +114,13 @@ export default function Home() {
   });
 
   // Reset materials when filter/sort changes
-  const prevFilterRef = useRef({ wpmFilter, sortOption });
+  const prevFilterRef = useRef({ wpmFilter, sortOption, categoryFilter });
   useEffect(() => {
-    if (prevFilterRef.current.wpmFilter !== wpmFilter || prevFilterRef.current.sortOption !== sortOption) {
-      prevFilterRef.current = { wpmFilter, sortOption };
+    if (prevFilterRef.current.wpmFilter !== wpmFilter || prevFilterRef.current.sortOption !== sortOption || prevFilterRef.current.categoryFilter !== categoryFilter) {
+      prevFilterRef.current = { wpmFilter, sortOption, categoryFilter };
       resetMaterials();
     }
-  }, [wpmFilter, sortOption, resetMaterials]);
+  }, [wpmFilter, sortOption, categoryFilter, resetMaterials]);
 
   useEffect(() => {
     if (user) {
@@ -113,6 +128,7 @@ export default function Home() {
       loadLastPracticed();
       loadUserStats();
       loadWpmDefault();
+      loadCategories();
       const admin = Boolean(user.email && ADMIN_EMAIL && user.email.toLowerCase().trim() === ADMIN_EMAIL!.toLowerCase().trim());
       if (admin) {
         setShowTutorialBanner(true);
@@ -190,6 +206,16 @@ export default function Home() {
         else if (avg < 140) setWpmFilter("normal");
         else setWpmFilter("fast");
       }
+    }
+  };
+
+  const loadCategories = async () => {
+    const { data } = await supabase
+      .from("materials")
+      .select("category");
+    if (data) {
+      const unique = [...new Set(data.map((d) => d.category))].sort();
+      setCategories(unique);
     }
   };
 
@@ -417,6 +443,33 @@ export default function Home() {
               続ける
             </Link>
           </div>
+        </div>
+      )}
+
+      {/* Category Filter */}
+      {categories.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 mb-3">
+          <button
+            onClick={() => setCategoryFilter("all")}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${categoryFilter === "all"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+              }`}
+          >
+            すべて
+          </button>
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat)}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${categoryFilter === cat
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+                }`}
+            >
+              {getCategoryLabel(cat)}
+            </button>
+          ))}
         </div>
       )}
 

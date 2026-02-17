@@ -1,13 +1,18 @@
 /**
- * Bulk-add beginner-friendly materials (WPM < 100) to Supabase.
+ * Seed curated famous speech materials into Supabase.
+ * Each section is manually selected for semantic coherence and thematic completeness.
  *
  * Usage:
  *   SUPABASE_SERVICE_ROLE_KEY=xxx node scripts/seed-materials.mjs
+ *
+ * Options:
+ *   --delete-all   Delete all existing materials before inserting
  *
  * Requires: yt-dlp installed locally
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { readFile, unlink } from "fs/promises";
@@ -32,47 +37,74 @@ if (!SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 // ---------------------------------------------------------------------------
-// Candidate videos — curated for beginners (WPM < 100 expected)
+// Curated materials — semantically coherent sections of famous speeches
 // ---------------------------------------------------------------------------
 const CANDIDATES = [
-  // === Trump (tested - slow sections confirmed) ===
-  { id: "QSUsXH3Ft6I", title: "Trump: National Prayer Breakfast", start: 300, end: 420 },
-  { id: "XfrHtbDi2XI", title: "Trump: Prayer Breakfast 2026 - Religious Freedom", start: 0, end: 120 },
-  { id: "c_9kY6sz_Uc", title: "Trump: UN General Assembly (Opening)", start: 0, end: 120 },
-  { id: "c_9kY6sz_Uc", title: "Trump: UN General Assembly (Closing)", start: 2700, end: 2820 },
-  { id: "MSEycl66RFk", title: "Trump: Davos World Economic Forum (WSJ)", start: 0, end: 120 },
-
   // === Steve Jobs ===
-  { id: "UF8uR6Z6KLc", title: "Steve Jobs: Stanford Commencement - Stay Hungry, Stay Foolish", start: 840, end: 905 },
+  // iPhone 2007 Keynote — The legendary "three revolutionary products" reveal
+  { id: "MnrJzXM7a6o", title: "Steve Jobs: Introducing the iPhone", start: 0, end: 198, category: "business" },
 
-  // === Tim Cook ===
-  { id: "ckjkz8zuMMs", title: "Tim Cook: MIT Commencement 2017 - Technology & Values", start: 480, end: 600 },
+  // Stanford 2005 — Calligraphy class at Reed → became Mac's beautiful typography
+  { id: "UF8uR6Z6KLc", title: "Steve Jobs: The Calligraphy That Changed Computing", start: 193, end: 290, category: "business" },
 
-  // === Mark Zuckerberg ===
-  { id: "BmYv8XGl-YU", title: "Zuckerberg: Harvard Commencement - Purpose", start: 1560, end: 1680 },
-  { id: "BmYv8XGl-YU", title: "Zuckerberg: Harvard Commencement - Community", start: 1800, end: 1920 },
+  // Stanford 2005 — Cancer diagnosis, surgery, "death is life's change agent"
+  { id: "UF8uR6Z6KLc", title: "Steve Jobs: Facing Death", start: 537, end: 663, category: "business" },
 
-  // === Elon Musk ===
-  { id: "bz7yYu_w2HY", title: "Elon Musk: Future, AI & Mars (Opening)", start: 0, end: 120 },
+  // Stanford 2005 — "Don't waste it living someone else's life" → "Stay Hungry, Stay Foolish"
+  { id: "UF8uR6Z6KLc", title: "Steve Jobs: Stay Hungry, Stay Foolish", start: 759, end: 890, category: "business" },
 
   // === Bill Gates ===
-  { id: "KMEe2ni92rQ", title: "Bill Gates: Harvard Commencement - Opening", start: 0, end: 120 },
-  { id: "KMEe2ni92rQ", title: "Bill Gates: Harvard Commencement - Closing", start: 1440, end: 1560 },
+  // Harvard 2007 — Humorous opening: "Dad, I always told you I'd come back for my degree"
+  { id: "zPx5N6Lh3sw", title: "Bill Gates: I Always Told You I'd Come Back", start: 185, end: 283, category: "business" },
 
-  // === Sundar Pichai ===
-  { id: "UUheH1seQuE", title: "Sundar Pichai: You Will Prevail", start: 360, end: 480 },
+  // Harvard 2007 — Core message: greatest advances reduce inequity
+  { id: "zPx5N6Lh3sw", title: "Bill Gates: Humanity's Greatest Advances Reduce Inequity", start: 439, end: 532, category: "business" },
 
-  // === Jack Ma ===
-  { id: "CZfp0ZUsBdM", title: "Jack Ma: We Never Give Up", start: 1440, end: 1509 },
-  { id: "g25jcvtjZjA", title: "Jack Ma: Moscow University - Advice to Youth", start: 2580, end: 2700 },
-  { id: "g25jcvtjZjA", title: "Jack Ma: Moscow University - Success & Failure", start: 3240, end: 3360 },
-  { id: "NCBUakJbrw0", title: "Jack Ma: Most Influential Speech", start: 1920, end: 2002 },
+  // Harvard 2007 — Mother's letter: "from those to whom much is given, much is expected"
+  { id: "zPx5N6Lh3sw", title: "Bill Gates: From Those to Whom Much Is Given", start: 1467, end: 1623, category: "business" },
 
-  // === Denzel Washington ===
-  { id: "ydj-gpaRgh8", title: "Denzel Washington: Dream Big, Work Hard", start: 60, end: 180 },
+  // === Trump ===
+  // Inaugural Address 2017 — "We all bleed the same red blood" → "Make America Great Again"
+  { id: "3WFwBPTU2I8", title: "Trump: We All Bleed the Same Red Blood", start: 3, end: 115, category: "business" },
 
-  // === Muniba Mazari ===
-  { id: "fBnAMUkNM2k", title: "Muniba Mazari: We All Are Perfectly Imperfect", start: 2280, end: 2372 },
+  // UN General Assembly 2025 — Teleprompter malfunction, "speak from the heart"
+  { id: "8vYy6-R6pXk", title: "Trump: Speaking from the Heart", start: 22, end: 118, category: "business" },
+
+  // UN General Assembly 2025 — Ended seven "unendable" wars in seven months
+  { id: "8vYy6-R6pXk", title: "Trump: Seven Wars Ended in Seven Months", start: 487, end: 580, category: "business" },
+
+  // === Tim Cook ===
+  // MIT 2017 — 15-year search for purpose: high school, college, grad school, "even a Windows PC"
+  { id: "ckjkz8zuMMs", title: "Tim Cook: A 15-Year Search for Purpose", start: 105, end: 199, category: "business" },
+
+  // MIT 2017 — Finding Apple, Steve Jobs, "How will you serve humanity?"
+  { id: "ckjkz8zuMMs", title: "Tim Cook: How Will You Serve Humanity", start: 229, end: 356, category: "business" },
+
+  // MIT 2017 — Meeting Pope Francis: "Never has humanity had such power over itself"
+  { id: "ckjkz8zuMMs", title: "Tim Cook: Never Has Humanity Had Such Power", start: 418, end: 512, category: "business" },
+
+  // === Elon Musk ===
+  // World Government Summit — Meaning of life, multiplanetary species, sense of adventure
+  { id: "bz7yYu_w2HY", title: "Elon Musk: Why We Must Be Multiplanetary", start: 107, end: 198, category: "business" },
+
+  // World Government Summit — Self-driving cars, elevator analogy
+  { id: "bz7yYu_w2HY", title: "Elon Musk: Self-Driving Will Be Like Elevators", start: 509, end: 607, category: "business" },
+
+  // World Government Summit — Physics thinking framework, "be less wrong over time"
+  { id: "bz7yYu_w2HY", title: "Elon Musk: Be Less Wrong Over Time", start: 1997, end: 2100, category: "business" },
+
+  // === Mark Zuckerberg ===
+  // Harvard 2017 — JFK janitor story: "I'm helping put a man on the moon"
+  { id: "BmYv8XGl-YU", title: "Zuckerberg: Purpose Creates True Happiness", start: 312, end: 403, category: "business" },
+
+  // Harvard 2017 — Nearly sold Facebook, felt alone, learned about higher purpose
+  { id: "BmYv8XGl-YU", title: "Zuckerberg: The Hardest Time Leading Facebook", start: 525, end: 619, category: "business" },
+
+  // Harvard 2017 — "Ideas don't come out fully formed" + JK Rowling rejected 12 times
+  { id: "BmYv8XGl-YU", title: "Zuckerberg: Ideas Don't Come Out Fully Formed", start: 680, end: 775, category: "business" },
+
+  // Harvard 2017 — Universal basic income, new social contract, "giving everyone freedom"
+  { id: "BmYv8XGl-YU", title: "Zuckerberg: A New Social Contract", start: 1062, end: 1163, category: "business" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -105,36 +137,133 @@ function parseJson3(content) {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch subtitles with yt-dlp
+// Fetch subtitles with yt-dlp (cache per videoId to avoid re-fetching)
+// Manual subs first → auto-sub fallback
 // ---------------------------------------------------------------------------
+const transcriptCache = new Map();
+const LANGS = ["en", "ja"];
+
 async function fetchTranscript(videoId) {
-  const tmpDir = os.tmpdir();
-  const fileId = randomUUID();
-  const outputPath = path.join(tmpDir, `seed_${fileId}`);
-
-  const cmd = `yt-dlp --write-auto-sub --sub-lang en,ja --sub-format json3 --skip-download -o "${outputPath}" "https://www.youtube.com/watch?v=${videoId}"`;
-
-  const result = {};
-
-  try {
-    await execAsync(cmd, { timeout: 30000 });
-  } catch {
-    // yt-dlp may exit non-zero if some languages fail — continue reading files
+  if (transcriptCache.has(videoId)) {
+    return transcriptCache.get(videoId);
   }
 
-  for (const lang of ["en", "ja"]) {
-    const subtitlePath = `${outputPath}.${lang}.json3`;
+  const tmpDir = os.tmpdir();
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  const result = {};
+  const subsType = {};
+
+  // Phase 1: Try manual (uploaded) subtitles
+  const manualId = randomUUID();
+  const manualPath = path.join(tmpDir, `seed_manual_${manualId}`);
+  const manualCmd = `yt-dlp --cookies-from-browser chrome --write-sub --sub-lang ${LANGS.join(",")} --sub-format json3 --skip-download -o "${manualPath}" "${url}"`;
+
+  try {
+    await execAsync(manualCmd, { timeout: 60000 });
+  } catch (err) {
+    if (err.stderr) console.warn(`    [manual] stderr: ${err.stderr.trim().split("\n").pop()}`);
+  }
+
+  for (const lang of LANGS) {
+    const subtitlePath = `${manualPath}.${lang}.json3`;
     try {
       const content = await readFile(subtitlePath, "utf-8");
-      result[lang] = parseJson3(content);
+      const items = parseJson3(content);
+      if (items.length > 0) {
+        result[lang] = items;
+        subsType[lang] = "manual";
+      }
     } catch {
-      // Language not available
+      // Not available
     } finally {
       try { await unlink(subtitlePath); } catch { /* ignore */ }
     }
   }
 
-  return result;
+  // Phase 2: Fall back to auto-sub for missing languages
+  const missingLangs = LANGS.filter((l) => !result[l]);
+  if (missingLangs.length > 0) {
+    const autoId = randomUUID();
+    const autoPath = path.join(tmpDir, `seed_auto_${autoId}`);
+    const autoCmd = `yt-dlp --cookies-from-browser chrome --write-auto-sub --sub-lang ${missingLangs.join(",")} --sub-format json3 --skip-download -o "${autoPath}" "${url}"`;
+
+    try {
+      await execAsync(autoCmd, { timeout: 60000 });
+    } catch (err) {
+      if (err.stderr) console.warn(`    [auto] stderr: ${err.stderr.trim().split("\n").pop()}`);
+    }
+
+    for (const lang of missingLangs) {
+      const subtitlePath = `${autoPath}.${lang}.json3`;
+      try {
+        const content = await readFile(subtitlePath, "utf-8");
+        const items = parseJson3(content);
+        if (items.length > 0) {
+          result[lang] = items;
+          subsType[lang] = "auto";
+        }
+      } catch {
+        // Not available
+      } finally {
+        try { await unlink(subtitlePath); } catch { /* ignore */ }
+      }
+    }
+  }
+
+  const cached = { ...result, subsType };
+  transcriptCache.set(videoId, cached);
+  return cached;
+}
+
+// ---------------------------------------------------------------------------
+// Punctuate auto-generated transcript chunks using Gemini
+// ---------------------------------------------------------------------------
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const DELIMITER = " ||| ";
+
+async function punctuateChunks(items) {
+  if (!GOOGLE_API_KEY || items.length === 0) return items;
+
+  const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+  const concatenated = items.map((item) => item.text).join(DELIMITER);
+
+  const prompt = `You are a punctuation restoration tool for English speech transcripts.
+
+The following text is from an auto-generated YouTube subtitle. It lacks punctuation and proper capitalization.
+
+The text contains segments separated by "${DELIMITER.trim()}". You MUST preserve every "${DELIMITER.trim()}" delimiter exactly as-is. Do NOT add, remove, or move any delimiter.
+
+Your task:
+1. Add proper punctuation (periods, commas, question marks, exclamation marks, apostrophes, colons)
+2. Capitalize the first letter of each sentence
+3. Capitalize proper nouns (names, brands, places — e.g. "apple" → "Apple", "ipod" → "iPod", "macintosh" → "Macintosh")
+4. Remove filler artifacts like "[Applause]", "[Music]", "[Laughter]" — replace with empty string
+5. Do NOT change any words, do NOT rephrase, do NOT add words, do NOT remove spoken words
+
+Return ONLY the corrected text with delimiters preserved. No explanations, no markdown.
+
+Text:
+${concatenated}`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const punctuated = result.response.text().trim();
+    const chunks = punctuated.split(DELIMITER);
+
+    if (chunks.length !== items.length) {
+      console.warn(`    Punctuation chunk mismatch (expected ${items.length}, got ${chunks.length}), using original`);
+      return items;
+    }
+
+    return items
+      .map((item, i) => ({ ...item, text: chunks[i].trim() }))
+      .filter((item) => item.text.length > 0);
+  } catch (err) {
+    console.warn(`    Punctuation failed: ${err.message}`);
+    return items;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +292,37 @@ function filterTranscript(items, startTime, endTime) {
 // Main
 // ---------------------------------------------------------------------------
 async function main() {
-  console.log(`\nProcessing ${CANDIDATES.length} candidate videos...\n`);
+  const deleteAll = process.argv.includes("--delete-all");
+
+  if (deleteAll) {
+    console.log("Deleting all existing materials...");
+    const { error } = await supabase.from("materials").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (error) {
+      console.error(`Failed to delete: ${error.message}`);
+      process.exit(1);
+    }
+    console.log("All materials deleted.\n");
+  }
+
+  console.log(`Processing ${CANDIDATES.length} curated materials...\n`);
+
+  // Group by videoId to fetch transcripts efficiently
+  const videoIds = [...new Set(CANDIDATES.map((c) => c.id))];
+  console.log(`Fetching transcripts for ${videoIds.length} unique videos...\n`);
+
+  for (let i = 0; i < videoIds.length; i++) {
+    const videoId = videoIds[i];
+    if (i > 0) {
+      console.log(`    (waiting 3s to avoid rate limiting...)`);
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    console.log(`  Fetching subtitles: ${videoId}...`);
+    const result = await fetchTranscript(videoId);
+    const types = Object.entries(result.subsType || {}).map(([l, t]) => `${l}:${t}`).join(", ");
+    console.log(`    → ${types || "no subs"}`);
+  }
+
+  console.log(`\nInserting materials...\n`);
 
   let inserted = 0;
   let skipped = 0;
@@ -173,11 +332,13 @@ async function main() {
     const label = `[${candidate.id}] ${candidate.title}`;
 
     try {
-      // Check if already exists
+      // Check if already exists (same video + same time range)
       const { data: existing } = await supabase
         .from("materials")
         .select("id")
         .eq("youtube_id", candidate.id)
+        .eq("start_time", candidate.start)
+        .eq("end_time", candidate.end)
         .maybeSingle();
 
       if (existing) {
@@ -186,35 +347,37 @@ async function main() {
         continue;
       }
 
-      // Fetch transcripts
-      console.log(`Fetching: ${label}...`);
-      const transcripts = await fetchTranscript(candidate.id);
+      const cached = transcriptCache.get(candidate.id);
 
-      if (!transcripts.en || transcripts.en.length === 0) {
+      if (!cached?.en || cached.en.length === 0) {
         console.log(`FAIL (no EN subtitle): ${label}`);
         failed++;
         continue;
       }
 
-      // Find the best time range (adjust end if transcript is shorter)
-      const lastItem = transcripts.en[transcripts.en.length - 1];
+      // Adjust end time if transcript is shorter
+      const lastItem = cached.en[cached.en.length - 1];
       const maxTime = Math.ceil((lastItem.offset + lastItem.duration) / 1000);
       let startTime = candidate.start;
       let endTime = Math.min(candidate.end, maxTime);
 
-      // Ensure minimum 30 seconds
       if (endTime - startTime < 30) {
-        endTime = Math.min(startTime + 60, maxTime);
-        if (endTime - startTime < 30) {
-          console.log(`FAIL (too short): ${label}`);
-          failed++;
-          continue;
-        }
+        console.log(`FAIL (too short): ${label}`);
+        failed++;
+        continue;
       }
 
       // Filter transcript to range
-      const selectedEn = filterTranscript(transcripts.en, startTime, endTime);
-      const selectedJa = transcripts.ja ? filterTranscript(transcripts.ja, startTime, endTime) : [];
+      let selectedEn = filterTranscript(cached.en, startTime, endTime);
+      const selectedJa = cached.ja ? filterTranscript(cached.ja, startTime, endTime) : [];
+
+      // Punctuate auto-generated English subs
+      if (cached.subsType?.en === "auto" && selectedEn.length > 0) {
+        console.log(`  Punctuating (auto-sub): ${label}...`);
+        selectedEn = await punctuateChunks(selectedEn);
+        // Small delay to avoid rate limiting
+        await new Promise((r) => setTimeout(r, 1000));
+      }
 
       if (selectedEn.length === 0) {
         console.log(`FAIL (no EN in range): ${label}`);
@@ -224,12 +387,6 @@ async function main() {
 
       // Calculate WPM
       const wpm = calculateWPM(selectedEn, startTime, endTime);
-
-      if (wpm >= 100) {
-        console.log(`SKIP (WPM ${wpm} >= 100): ${label}`);
-        skipped++;
-        continue;
-      }
 
       // Insert into Supabase
       const { error: insertError } = await supabase.from("materials").insert({
@@ -241,6 +398,7 @@ async function main() {
         transcript: selectedEn,
         transcript_ja: selectedJa.length > 0 ? selectedJa : null,
         wpm,
+        category: candidate.category || "business",
       });
 
       if (insertError) {

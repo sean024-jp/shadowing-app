@@ -1,7 +1,13 @@
+export type WordTiming = {
+  text: string;
+  offset: number; // absolute start time in ms
+};
+
 export type TranscriptItem = {
   text: string;
   offset: number;
   duration: number;
+  words?: WordTiming[];
 };
 
 export type Material = {

@@ -59,6 +59,7 @@ export default function AdminPage() {
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [batchProgress, setBatchProgress] = useState("");
   const [punctuating, setPunctuating] = useState(false);
+  const [aligning, setAligning] = useState(false);
 
   const isAdmin = Boolean(user?.email && ADMIN_EMAIL && user.email.toLowerCase().trim() === ADMIN_EMAIL.toLowerCase().trim());
 
@@ -212,6 +213,39 @@ export default function AdminPage() {
       setError("整形に失敗しました: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setPunctuating(false);
+    }
+  };
+
+  const alignJaTranscript = async () => {
+    const selectedEn = getSelectedTranscript(transcript);
+    const selectedJa = getSelectedTranscript(transcriptJa);
+    if (selectedEn.length === 0 || selectedJa.length === 0) return;
+    setAligning(true);
+    try {
+      const res = await fetch("/api/align-transcript", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enChunks: selectedEn.map((t) => t.text),
+          jaText: selectedJa.map((t) => t.text).join(""),
+        }),
+      });
+      const data = await res.json();
+      if (data.chunks && data.chunks.length === selectedEn.length) {
+        const alignedJa = selectedEn.map((en, i) => ({
+          text: data.chunks[i],
+          offset: en.offset,
+          duration: en.duration,
+        }));
+        setTranscriptJa(alignedJa);
+        setSuccess("日本語スクリプトをENに整列しました");
+      } else {
+        setError("整列に失敗しました（セグメント数不一致）");
+      }
+    } catch (err) {
+      setError("整列に失敗しました: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setAligning(false);
     }
   };
 
@@ -650,12 +684,21 @@ export default function AdminPage() {
 
               {/* Japanese transcript preview */}
               <div>
-                <h3 className="font-medium text-sm mb-2">
-                  日本語スクリプト
-                  {transcriptJa.length === 0 && (
-                    <span className="text-xs opacity-60 ml-2">（なし）</span>
-                  )}
-                </h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-medium text-sm">
+                    日本語スクリプト
+                    {transcriptJa.length === 0 && (
+                      <span className="text-xs opacity-60 ml-2">（なし）</span>
+                    )}
+                  </h3>
+                  <button
+                    onClick={alignJaTranscript}
+                    disabled={aligning || getSelectedTranscript(transcript).length === 0 || getSelectedTranscript(transcriptJa).length === 0}
+                    className="text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                  >
+                    {aligning ? "整列中..." : "ENに整列"}
+                  </button>
+                </div>
                 <div
                   className="rounded-lg p-3 max-h-32 overflow-y-auto text-sm"
                   style={{ background: "var(--background)" }}

@@ -8,10 +8,16 @@ import os from "os";
 
 const execAsync = promisify(exec);
 
+type WordTiming = {
+  text: string;
+  offset: number;
+};
+
 type TranscriptItem = {
   text: string;
   offset: number;
   duration: number;
+  words?: WordTiming[];
 };
 
 type Json3Event = {
@@ -37,10 +43,22 @@ function parseJson3(content: string): TranscriptItem[] {
       .trim();
 
     if (text) {
+      const words: WordTiming[] = [];
+      for (const seg of event.segs) {
+        const w = (seg.utf8 || "").replace(/\n/g, " ").trim();
+        if (w) {
+          words.push({
+            text: w,
+            offset: event.tStartMs + (seg.tOffsetMs || 0),
+          });
+        }
+      }
+
       items.push({
         text,
         offset: event.tStartMs,
         duration: event.dDurationMs,
+        ...(words.length > 0 ? { words } : {}),
       });
     }
   }

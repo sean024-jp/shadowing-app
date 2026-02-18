@@ -407,37 +407,8 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
 
   const renderScriptLine = (item: TranscriptItem, idx: number) => {
     const isActive = idx === currentIndex;
-
-    // Find match
-    const transcriptEn = material.transcript;
-    const transcriptJa = material.transcript_ja;
-    let jaItem = null;
-
-    if (transcriptJa && transcriptJa.length > 0) {
-      // 1. Try index match if lengths overlap significantly (heuristic)
-      // If exact length match, assume index alignment
-      if (transcriptJa.length === transcriptEn.length) {
-        jaItem = transcriptJa[idx];
-      } else {
-        // 2. Time-based matching with wider window
-        const myStart = item.offset;
-        let bestMatch = null;
-        let minDiff = Infinity;
-
-        // Search window optimization could be done here, but N is small
-        for (const ja of transcriptJa) {
-          const diff = Math.abs(ja.offset - myStart);
-          if (diff < minDiff) {
-            minDiff = diff;
-            bestMatch = ja;
-          }
-        }
-        // Allow up to 3 seconds diff, effectively finding the "closest" line
-        if (minDiff < 3000) {
-          jaItem = bestMatch;
-        }
-      }
-    }
+    const jaItem = material.transcript_ja?.[idx] ?? null;
+    const timeMs = currentTime * 1000;
 
     return (
       <div
@@ -450,8 +421,19 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
           }`}
       >
         {showScript && (
-          <p className={`text-base leading-snug ${isActive ? "font-bold text-gray-900 dark:text-gray-100" : "text-gray-700 dark:text-gray-300"}`}>
-            {item.text}
+          <p className={`text-base leading-snug ${isActive ? "text-gray-900 dark:text-gray-100" : "text-gray-700 dark:text-gray-300"}`}>
+            {isActive && item.words ? (
+              item.words.map((w, i) => (
+                <span
+                  key={i}
+                  className={timeMs >= w.offset ? "font-bold" : "opacity-60"}
+                >
+                  {w.text}{" "}
+                </span>
+              ))
+            ) : (
+              item.text
+            )}
           </p>
         )}
         {showJapanese && jaItem && (

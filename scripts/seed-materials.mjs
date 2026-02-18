@@ -125,10 +125,22 @@ function parseJson3(content) {
       .trim();
 
     if (text) {
+      const words = [];
+      for (const seg of event.segs) {
+        const w = (seg.utf8 || "").replace(/\n/g, " ").trim();
+        if (w) {
+          words.push({
+            text: w,
+            offset: event.tStartMs + (seg.tOffsetMs || 0),
+          });
+        }
+      }
+
       items.push({
         text,
         offset: event.tStartMs,
         duration: event.dDurationMs,
+        ...(words.length > 0 ? { words } : {}),
       });
     }
   }
@@ -267,6 +279,63 @@ ${concatenated}`;
 }
 
 // ---------------------------------------------------------------------------
+// Align JA transcript to EN segments using Gemini
+// ---------------------------------------------------------------------------
+async function alignJaToEn(enItems, jaItems) {
+  if (!GOOGLE_API_KEY || enItems.length === 0 || jaItems.length === 0) return null;
+  if (enItems.length === jaItems.length) return jaItems; // Already aligned
+
+  const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+  const enConcat = enItems.map((item) => item.text).join(DELIMITER);
+  const jaText = jaItems.map((item) => item.text).join("");
+
+  const prompt = `You are a Japanese translation alignment tool for English speech transcripts.
+
+You are given:
+1. English transcript segments separated by "${DELIMITER.trim()}" delimiters
+2. A reference Japanese translation of the same speech
+
+Your task: Produce a Japanese translation for EACH English segment, using "${DELIMITER.trim()}" as delimiter between segments.
+
+Rules:
+- Output MUST have exactly the same number of "${DELIMITER.trim()}" delimiters as the input (${enItems.length - 1} delimiters for ${enItems.length} segments)
+- Use the reference Japanese translation as a guide for terminology and meaning
+- Each Japanese segment should be a natural translation of its corresponding English segment
+- Even if an English segment is a short fragment (e.g., "a half years."), produce a natural Japanese fragment for it
+- Remove artifacts like [拍手], [音楽], [笑い], [Applause], [Music] — replace with empty string
+- Do NOT add, remove, or reposition any "${DELIMITER.trim()}" delimiter
+- Return ONLY the Japanese text with delimiters. No explanations, no markdown.
+
+English segments:
+${enConcat}
+
+Reference Japanese:
+${jaText}`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const aligned = result.response.text().trim();
+    const chunks = aligned.split(DELIMITER);
+
+    if (chunks.length !== enItems.length) {
+      console.warn(`    Alignment chunk mismatch (expected ${enItems.length}, got ${chunks.length}), skipping alignment`);
+      return null;
+    }
+
+    return enItems.map((en, i) => ({
+      text: chunks[i].trim() || "—",
+      offset: en.offset,
+      duration: en.duration,
+    }));
+  } catch (err) {
+    console.warn(`    Alignment failed: ${err.message}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // WPM calculation (same logic as src/lib/wpm.ts)
 // ---------------------------------------------------------------------------
 function calculateWPM(transcript, startTime, endTime) {
@@ -385,6 +454,20 @@ async function main() {
         continue;
       }
 
+      // Align JA to EN segments
+      let alignedJa = selectedJa;
+      if (selectedJa.length > 0 && selectedEn.length > 0) {
+        console.log(`  Aligning JA (${selectedJa.length} → ${selectedEn.length}): ${label}...`);
+        const result = await alignJaToEn(selectedEn, selectedJa);
+        if (result) {
+          alignedJa = result;
+          console.log(`    → Aligned successfully`);
+        } else {
+          console.warn(`    → Using raw JA`);
+        }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+
       // Calculate WPM
       const wpm = calculateWPM(selectedEn, startTime, endTime);
 
@@ -396,7 +479,7 @@ async function main() {
         start_time: startTime,
         end_time: endTime,
         transcript: selectedEn,
-        transcript_ja: selectedJa.length > 0 ? selectedJa : null,
+        transcript_ja: alignedJa.length > 0 ? alignedJa : null,
         wpm,
         category: candidate.category || "business",
       });

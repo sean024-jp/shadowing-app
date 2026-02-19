@@ -459,7 +459,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
                               <span
                                 key={`${idx}-${i}`}
                                 onClick={() => seekTo(item.offset)}
-                                className={`cursor-pointer ${isPast ? "font-bold" : "opacity-50"}`}
+                                className={`cursor-pointer ${isPast ? "font-bold" : ""}`}
                               >
                                 {word}{" "}
                               </span>

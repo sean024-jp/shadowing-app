@@ -423,14 +423,17 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
         {showScript && (
           <p className={`text-base leading-snug ${isActive ? "text-gray-900 dark:text-gray-100" : "text-gray-700 dark:text-gray-300"}`}>
             {isActive && item.words ? (
-              item.words.map((w, i) => (
-                <span
-                  key={i}
-                  className={timeMs >= w.offset ? "font-bold" : "opacity-60"}
-                >
-                  {w.text}{" "}
-                </span>
-              ))
+              item.text.split(/\s+/).filter(t => t).map((word, i) => {
+                const timing = item.words![Math.min(i, item.words!.length - 1)];
+                return (
+                  <span
+                    key={i}
+                    className={timeMs >= timing.offset ? "font-bold" : "opacity-60"}
+                  >
+                    {word}{" "}
+                  </span>
+                );
+              })
             ) : (
               item.text
             )}

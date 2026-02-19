@@ -405,45 +405,87 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
     );
   }
 
-  const renderScriptLine = (item: TranscriptItem, idx: number) => {
-    const isActive = idx === currentIndex;
-    const jaItem = material.transcript_ja?.[idx] ?? null;
+  const buildSentenceBlocks = (
+    transcript: TranscriptItem[],
+    transcript_ja: TranscriptItem[] | null
+  ): Array<{ items: Array<{ item: TranscriptItem; idx: number }>; jaText: string }> => {
+    if (!transcript_ja || transcript_ja.length === 0) {
+      return [{ items: transcript.map((item, idx) => ({ item, idx })), jaText: "" }];
+    }
+    const blocks: Array<{ items: Array<{ item: TranscriptItem; idx: number }>; jaText: string }> = [];
+    let currentItems: Array<{ item: TranscriptItem; idx: number }> = [];
+    let currentJaText = "";
+
+    transcript.forEach((item, idx) => {
+      const jaItem = transcript_ja[idx];
+      currentItems.push({ item, idx });
+      if (jaItem) currentJaText += jaItem.text;
+      const isLast = idx === transcript.length - 1;
+      const isSentenceEnd = jaItem && /[。！？!?]/.test(jaItem.text);
+      if (isLast || isSentenceEnd) {
+        blocks.push({ items: currentItems, jaText: currentJaText });
+        currentItems = [];
+        currentJaText = "";
+      }
+    });
+
+    return blocks;
+  };
+
+  const renderContinuousScript = () => {
+    if (!material) return null;
     const timeMs = currentTime * 1000;
+    const blocks = buildSentenceBlocks(material.transcript, material.transcript_ja ?? null);
 
     return (
-      <div
-        key={idx}
-        id={`line-${idx}`}
-        onClick={() => seekTo(item.offset)}
-        className={`p-2 rounded-lg cursor-pointer transition-colors duration-200 mb-1 ${isActive
-          ? "bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500"
-          : "hover:bg-gray-50 dark:hover:bg-gray-800 border-l-4 border-transparent"
-          }`}
-      >
-        {showScript && (
-          <p className={`text-base leading-snug ${isActive ? "text-gray-900 dark:text-gray-100" : "text-gray-700 dark:text-gray-300"}`}>
-            {isActive && item.words ? (
-              item.text.split(/\s+/).filter(t => t).map((word, i) => {
-                const timing = item.words![Math.min(i, item.words!.length - 1)];
-                return (
-                  <span
-                    key={i}
-                    className={timeMs >= timing.offset ? "font-bold" : "opacity-60"}
-                  >
-                    {word}{" "}
-                  </span>
-                );
-              })
-            ) : (
-              item.text
-            )}
-          </p>
-        )}
-        {showJapanese && jaItem && (
-          <p className={`text-xs mt-0.5 leading-snug ${isActive ? "text-gray-700 dark:text-gray-300 font-medium" : "text-gray-500 dark:text-gray-500"}`}>
-            {jaItem.text}
-          </p>
-        )}
+      <div className="p-3 text-base leading-relaxed">
+        {blocks.map((block, blockIdx) => {
+          const isBlockActive = block.items.some(({ idx }) => idx === currentIndex);
+          return (
+            <div key={blockIdx} className="mb-4">
+              {showScript && (
+                <p className="text-gray-900 dark:text-gray-100">
+                  {block.items.map(({ item, idx }) => {
+                    const isActive = idx === currentIndex;
+                    const words = item.text.split(/\s+/).filter(t => t);
+                    return (
+                      <span key={idx}>
+                        <span id={`line-${idx}`} />
+                        {isActive && item.words ? (
+                          words.map((word, i) => {
+                            const timing = item.words![Math.min(i, item.words!.length - 1)];
+                            const isPast = timeMs >= timing.offset;
+                            return (
+                              <span
+                                key={`${idx}-${i}`}
+                                onClick={() => seekTo(item.offset)}
+                                className={`cursor-pointer ${isPast ? "font-bold" : "opacity-50"}`}
+                              >
+                                {word}{" "}
+                              </span>
+                            );
+                          })
+                        ) : (
+                          <span
+                            onClick={() => seekTo(item.offset)}
+                            className={`cursor-pointer ${idx < currentIndex ? "text-gray-400 dark:text-gray-500" : ""}`}
+                          >
+                            {item.text}{" "}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </p>
+              )}
+              {showJapanese && block.jaText && (
+                <p className={`text-xs mt-1 leading-snug ${isBlockActive ? "text-gray-700 dark:text-gray-300 font-medium" : "text-gray-500 dark:text-gray-500"}`}>
+                  {block.jaText}
+                </p>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -506,7 +548,7 @@ export default function PracticePage({ params }: { params: Promise<{ id: string 
         {/* Script Area */}
         <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-gray-900 relative">
           <div ref={containerRef} className="absolute inset-0 overflow-y-auto p-3" style={{ paddingBottom: "160px" }}> {/* Extra padding for bottom controls */}
-            {material.transcript.map((item, idx) => renderScriptLine(item, idx))}
+            {renderContinuousScript()}
           </div>
         </div>
       </div>
